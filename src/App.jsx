@@ -11,6 +11,7 @@ import AdminSettings from './pages/AdminSettings.jsx';
 import RulesWeights from './pages/admin/RulesWeights.jsx';
 import UserManagement from './pages/admin/UserManagement.jsx';
 import SystemConfig from './pages/admin/SystemConfig.jsx';
+import ManageCase from './pages/ManageCase.jsx';
 
 function ProtectedRoute({ children }) {
   const { currentUser, loading } = useAuth();
@@ -32,6 +33,7 @@ function AnimatedRoutes() {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/register-case" element={<ProtectedRoute><RegisterCase /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/cases/:token" element={<ProtectedRoute><ManageCase /></ProtectedRoute>} />
 
         {/* Admin Settings — nested */}
         <Route path="/admin-settings" element={<ProtectedRoute><AdminSettings /></ProtectedRoute>}>

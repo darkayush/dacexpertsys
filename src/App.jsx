@@ -13,6 +13,11 @@ import UserManagement from './pages/admin/UserManagement.jsx';
 import SystemConfig from './pages/admin/SystemConfig.jsx';
 import ManageCase from './pages/ManageCase.jsx';
 import ViewCase from './pages/ViewCase.jsx';
+import StudentLayout from './layouts/StudentLayout.jsx';
+import StudentDashboard from './pages/student/StudentDashboard.jsx';
+import StudentCases from './pages/student/StudentCases.jsx';
+import StudentCaseDetails from './pages/student/StudentCaseDetails.jsx';
+import StudentPlaceholder from './pages/student/StudentPlaceholder.jsx';
 
 function ProtectedRoute({ children }) {
   const { currentUser, loading } = useAuth();
@@ -36,6 +41,17 @@ function AnimatedRoutes() {
         <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
         <Route path="/cases/:token" element={<ProtectedRoute><ManageCase /></ProtectedRoute>} />
         <Route path="/view-case/:token" element={<ProtectedRoute><ViewCase /></ProtectedRoute>} />
+
+        {/* Student area — separate layout */}
+        <Route path="/student" element={<ProtectedRoute><StudentLayout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<StudentDashboard />} />
+          <Route path="cases" element={<StudentCases />} />
+          <Route path="cases/:token" element={<StudentCaseDetails />} />
+          <Route path="penalty-points" element={<StudentPlaceholder title="Penalty Points" />} />
+          <Route path="profile" element={<StudentPlaceholder title="Profile" />} />
+          <Route path="disciplinary-policy" element={<StudentPlaceholder title="Disciplinary Policy" />} />
+        </Route>
 
         {/* Admin Settings — nested */}
         <Route path="/admin-settings" element={<ProtectedRoute><AdminSettings /></ProtectedRoute>}>

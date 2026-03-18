@@ -130,8 +130,8 @@ export default function Login() {
         </div>
 
         {/* ── Heading ── */}
-        <h1 className="text-[#0f172a] text-lg font-bold leading-tight mb-1 text-center">Login</h1>
-        <p className="text-black text-xs leading-5 mb-6 text-center">Sign in to access the DAC Expert System</p>
+        <h1 className="text-[#0f172a] text-lg font-bold leading-tight mb-1">Login</h1>``
+        <p className="text-black text-xs leading-5 mb-6">Sign in to access the DAC Expert System</p>
 
         {/* ── Form ── */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

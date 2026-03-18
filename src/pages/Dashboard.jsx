@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from '../components/Sidebar';
 import { pageVariants, listVariants, itemVariants } from '../lib/motion';
@@ -165,6 +165,7 @@ const INITIAL_NOTIFICATIONS = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -440,9 +441,25 @@ export default function Dashboard() {
 
                         {/* Action */}
                         <td className="px-6 py-4 text-right">
-                          <button className={`font-medium text-sm transition-colors ${row.actionClass}`}>
-                            {row.action}
-                          </button>
+                          {row.action === 'Manage' ? (
+                            <button
+                              onClick={() => navigate(`/cases/${row.id.replace('#', '')}`)}
+                              className={`font-medium text-sm transition-colors ${row.actionClass}`}
+                            >
+                              {row.action}
+                            </button>
+                          ) : row.action === 'View Details' ? (
+                            <button
+                              onClick={() => navigate(`/view-case/${row.id.replace('#', '')}`)}
+                              className={`font-medium text-sm transition-colors ${row.actionClass}`}
+                            >
+                              {row.action}
+                            </button>
+                          ) : (
+                            <button className={`font-medium text-sm transition-colors ${row.actionClass}`}>
+                              {row.action}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

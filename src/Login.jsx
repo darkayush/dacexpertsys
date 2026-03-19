@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { loginWithEmail, loginWithGoogle } from './firebase/auth';
+import { db } from './firebase/firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 const MailIcon = () => (
@@ -66,13 +68,40 @@ export default function Login() {
     }
   };
 
+  const handleUserRouting = async (userCredential) => {
+    try {
+      const uid = userCredential.user?.uid || userCredential?.uid;
+      if (!uid) {
+        console.error("UID missing from credentials", userCredential);
+        return navigate("/dashboard");
+      }
+      console.log("Logged in user UID:", uid);
+      const userDoc = await getDoc(doc(db, "users", uid));
+      if (userDoc.exists()) {
+        const role = userDoc.data().role?.toLowerCase?.();
+        console.log("User role:", role);
+        if (role === "student") navigate("/student");
+        else if (role === "warden") navigate("/warden");
+        else if (role === "dsw") navigate("/dsw");
+        else if (role === "admin") navigate("/dashboard");
+        else navigate("/dashboard");
+      } else {
+        console.warn("User document not found in 'users' collection for UID:", uid);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      console.error("Error fetching user role:", err);
+      navigate("/dashboard");
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
     setLoading(true);
     try {
-      await loginWithEmail(email, password);
-      navigate('/dashboard');
+      const userCredential = await loginWithEmail(email, password);
+      await handleUserRouting(userCredential);
     } catch (err) {
       setAuthError(toFirebaseError(err.code));
     } finally {
@@ -84,8 +113,8 @@ export default function Login() {
     setAuthError('');
     setLoading(true);
     try {
-      await loginWithGoogle();
-      navigate('/dashboard');
+      const userCredential = await loginWithGoogle();
+      await handleUserRouting(userCredential);
     } catch (err) {
       setAuthError(toFirebaseError(err.code));
     } finally {
@@ -130,7 +159,7 @@ export default function Login() {
         </div>
 
         {/* ── Heading ── */}
-        <h1 className="text-[#0f172a] text-lg font-bold leading-tight mb-1">Login</h1>``
+        <h1 className="text-[#0f172a] text-lg font-bold leading-tight mb-1">Login</h1>
         <p className="text-black text-xs leading-5 mb-6">Sign in to access the DAC Expert System</p>
 
         {/* ── Form ── */}

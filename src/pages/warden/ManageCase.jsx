@@ -385,27 +385,7 @@ export default function ManageCase() {
                   </div>
                 </motion.div>
 
-                {/* Questionnaire */}
-                <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">psychology</span>
-                    <h3 className="font-semibold text-[#0f172a] text-sm">Questionnaire</h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {[
-                        { label: 'Was the student intoxicated?', value: caseData.questionnaire.intoxicated ? 'Yes' : 'No' },
-                        { label: 'Did the student cooperate?', value: caseData.questionnaire.cooperated ? 'Yes' : 'No' },
-                        { label: 'Is this a repeated offense?', value: caseData.questionnaire.repeated ? 'Yes' : 'No' },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="p-4 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                          <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-1">{label}</p>
-                          <p className="text-[#0f172a] text-base font-semibold">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
+                
 
                 {/* Notes */}
                 <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">

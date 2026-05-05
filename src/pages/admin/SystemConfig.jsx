@@ -5,13 +5,24 @@
  */
 
 import { useState } from 'react';
-import { seedFirestore, forceSeedFirestore } from '../../services/seedFirestore';
+import { seedRules } from '../../services/api';
 
 const OFFENSE_LEVELS = [
   { level: 1, label: 'Level 1 – Minor',    fine: 1000,  points: 10,  color: 'text-slate-600',   bg: 'bg-slate-50',   border: 'border-slate-200' },
   { level: 2, label: 'Level 2 – Moderate', fine: 2500,  points: 25,  color: 'text-yellow-700',  bg: 'bg-yellow-50',  border: 'border-yellow-200' },
   { level: 3, label: 'Level 3 – Serious',  fine: 5000,  points: 50,  color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-200' },
   { level: 4, label: 'Level 4 – Critical', fine: 10000, points: 100, color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200' },
+];
+
+const DEFAULT_RULES = [
+  { question: 'Plagiarism – First Offense', weight: 70, category: 'Academic' },
+  { question: 'Plagiarism – Repeat Offense', weight: 90, category: 'Academic' },
+  { question: 'Recidivism Multiplier', weight: 85, category: 'Behaviour' },
+  { question: 'Vandalism / Property Damage', weight: 65, category: 'Conduct' },
+  { question: 'Attendance Violation', weight: 30, category: 'Academic' },
+  { question: 'Substance Abuse', weight: 75, category: 'Conduct' },
+  { question: 'Exam Malpractice', weight: 80, category: 'Academic' },
+  { question: 'Disruption / Misconduct', weight: 45, category: 'Behaviour' },
 ];
 
 export default function SystemConfig() {
@@ -22,14 +33,10 @@ export default function SystemConfig() {
     setSeeding(true);
     setSeedLog(null);
     try {
-      const fn     = force ? forceSeedFirestore : seedFirestore;
-      const result = await fn();
-      const parts  = [];
-      if (result?.offensesSeeded)  parts.push('Offense levels seeded ✓');
-      if (result?.questionsSeeded) parts.push('Questions seeded ✓');
-      const msg = parts.length
-        ? parts.join(' · ')
-        : 'Collections already exist – no changes made. Use "Force Re-seed" to overwrite.';
+      const result = await seedRules({ rules: DEFAULT_RULES, force });
+      const msg = result?.seeded
+        ? `Rules seeded ✓ (${result.count})`
+        : 'Rules already exist – no changes made. Use "Force Re-seed" to overwrite.';
       setSeedLog({ type: 'success', message: msg });
     } catch (err) {
       setSeedLog({ type: 'error', message: err?.message ?? 'Seeding failed. Check console for details.' });
@@ -105,16 +112,15 @@ export default function SystemConfig() {
         </div>
       </div>
 
-      {/* ── Seed Firestore ────────────────────────────────────────────────── */}
+      {/* ── Seed Rules ────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm p-5 space-y-4">
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">database</span>
           <h4 className="font-semibold text-[#0f172a] text-sm">Database Seeding</h4>
         </div>
         <p className="text-sm text-[#64748b]">
-          Populates the <code className="bg-slate-100 rounded px-1 py-0.5 text-xs">offenses</code> and{' '}
-          <code className="bg-slate-100 rounded px-1 py-0.5 text-xs">questions</code> Firestore collections
-          with initial data. Safe to run multiple times — skips existing collections.
+          Populates the <code className="bg-slate-100 rounded px-1 py-0.5 text-xs">rules</code> table with
+          initial data. Safe to run multiple times — skips existing rules unless you force.
         </p>
 
         {/* Result banner */}

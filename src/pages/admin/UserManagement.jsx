@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getUsers, updateUserRole, resetUserPassword } from '../../services/api';
+import {
+  createUser,
+  deleteUser,
+  getUsers,
+  resetUserPassword,
+  updateUser,
+  updateUserRole,
+} from '../../services/api';
 
 const ROLE_OPTIONS = ['student', 'warden', 'chief_warden', 'dsw', 'admin'];
 
@@ -11,6 +18,20 @@ export default function UserManagement() {
   const [success, setSuccess] = useState('');
   const [updatingRoleId, setUpdatingRoleId] = useState(null);
   const [resettingPasswordId, setResettingPasswordId] = useState(null);
+  const [savingUser, setSavingUser] = useState(false);
+  const [userModal, setUserModal] = useState({ open: false, mode: 'create' });
+  const [form, setForm] = useState({
+    id: null,
+    name: '',
+    email: '',
+    role: 'student',
+    program: '',
+    enrollment_no: '',
+    year: '',
+    hostel: '',
+    room: '',
+  });
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [tempPasswordModal, setTempPasswordModal] = useState({
     open: false,
     userName: '',
@@ -69,6 +90,142 @@ export default function UserManagement() {
     }
   };
 
+  const openCreateModal = () => {
+    setForm({
+      id: null,
+      name: '',
+      email: '',
+      role: 'student',
+      program: '',
+      enrollment_no: '',
+      year: '',
+      hostel: '',
+      room: '',
+    });
+    setUserModal({ open: true, mode: 'create' });
+    setError('');
+    setSuccess('');
+  };
+
+  const openEditModal = (user) => {
+    setForm({
+      id: user.id,
+      name: user.name || '',
+      email: user.email || '',
+      role: user.role || 'student',
+      program: user.program || '',
+      enrollment_no: user.enrollment_no || '',
+      year: user.year ? String(user.year) : '',
+      hostel: user.hostel || '',
+      room: user.room || '',
+    });
+    setUserModal({ open: true, mode: 'edit' });
+    setError('');
+    setSuccess('');
+  };
+
+  const closeUserModal = () => {
+    setUserModal({ open: false, mode: 'create' });
+    setForm({
+      id: null,
+      name: '',
+      email: '',
+      role: 'student',
+      program: '',
+      enrollment_no: '',
+      year: '',
+      hostel: '',
+      room: '',
+    });
+  };
+
+  const handleFormChange = (field) => (event) => {
+    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const handleSaveUser = async () => {
+    if (!form.name.trim() || !form.email.trim()) {
+      setError('Name and email are required.');
+      return;
+    }
+
+    try {
+      setSavingUser(true);
+      setError('');
+      setSuccess('');
+
+      if (userModal.mode === 'create') {
+        const result = await createUser({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          role: form.role,
+          program: form.program || null,
+          enrollment_no: form.enrollment_no || null,
+          year: form.year ? Number(form.year) : null,
+          hostel: form.hostel || null,
+          room: form.room || null,
+        });
+        setUsers((prev) => {
+          if (result.user?.role === 'student') {
+            return prev;
+          }
+          return [...prev, result.user];
+        });
+        if (result?.tempPassword) {
+          setTempPasswordModal({
+            open: true,
+            userName: result?.user?.name || 'User',
+            tempPassword: result.tempPassword,
+          });
+        }
+        setSuccess('User created successfully.');
+      } else {
+        const result = await updateUser(form.id, {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          role: form.role,
+          program: form.program || null,
+          enrollment_no: form.enrollment_no || null,
+          year: form.year ? Number(form.year) : null,
+          hostel: form.hostel || null,
+          room: form.room || null,
+        });
+        setUsers((prev) => {
+          if (result.user?.role === 'student') {
+            return prev.filter((user) => user.id !== form.id);
+          }
+          return prev.map((user) => (
+            user.id === form.id ? { ...user, ...result.user } : user
+          ));
+        });
+        setSuccess('User updated successfully.');
+      }
+
+      closeUserModal();
+    } catch (saveError) {
+      setError(saveError?.message || 'Failed to save user.');
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return;
+    try {
+      setSavingUser(true);
+      setError('');
+      setSuccess('');
+      await deleteUser(deleteTarget.id);
+      setUsers((prev) => prev.filter((user) => user.id !== deleteTarget.id));
+      setSuccess('User deleted successfully.');
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Failed to delete user.');
+    } finally {
+      setSavingUser(false);
+      setDeleteTarget(null);
+    }
+  };
+
   const handleResetPassword = async (userId, userName) => {
     try {
       setResettingPasswordId(userId);
@@ -97,16 +254,26 @@ export default function UserManagement() {
           <p className="text-sm text-[#64748b] mt-0.5">Manage user roles and password resets securely.</p>
         </div>
 
-        <div className="w-full md:w-80">
-          <label htmlFor="user-search" className="sr-only">Search users</label>
-          <input
-            id="user-search"
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email"
-            className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-3 py-2.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/15"
-          />
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+          <div className="w-full md:w-80">
+            <label htmlFor="user-search" className="sr-only">Search users</label>
+            <input
+              id="user-search"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or email"
+              className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-3 py-2.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/15"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center justify-center gap-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-sm font-semibold rounded-xl px-4 py-2.5"
+          >
+            <span className="material-symbols-outlined text-[18px]">person_add</span>
+            Add User
+          </button>
         </div>
       </div>
 
@@ -180,6 +347,22 @@ export default function UserManagement() {
                         >
                           {resettingPasswordId === user.id ? 'Resetting...' : 'Reset Password'}
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(user)}
+                          className="inline-flex items-center justify-center gap-1.5 bg-[#eef2ff] border border-[#c7d2fe] rounded-lg px-3 py-2 text-xs font-semibold text-[#3730a3] hover:bg-[#e0e7ff] transition-colors"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(user)}
+                          className="inline-flex items-center justify-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -189,6 +372,146 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+
+      {userModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white border border-[#e2e8f0] p-6 space-y-4">
+            <div>
+              <h4 className="text-[#0f172a] text-lg font-bold">
+                {userModal.mode === 'create' ? 'Add User' : 'Edit User'}
+              </h4>
+              <p className="text-sm text-[#64748b] mt-1">Manage user profile and role details.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Name *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={handleFormChange('name')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Email *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={handleFormChange('email')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Role</label>
+                <select
+                  value={form.role}
+                  onChange={handleFormChange('role')}
+                  className="w-full bg-white border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#334155]"
+                >
+                  {ROLE_OPTIONS.map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Program</label>
+                <input
+                  type="text"
+                  value={form.program}
+                  onChange={handleFormChange('program')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Enrollment No</label>
+                <input
+                  type="text"
+                  value={form.enrollment_no}
+                  onChange={handleFormChange('enrollment_no')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Year</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={form.year}
+                  onChange={handleFormChange('year')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Hostel</label>
+                <input
+                  type="text"
+                  value={form.hostel}
+                  onChange={handleFormChange('hostel')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Room</label>
+                <input
+                  type="text"
+                  value={form.room}
+                  onChange={handleFormChange('room')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeUserModal}
+                className="px-4 py-2 text-sm font-semibold text-[#475569] hover:text-[#0f172a]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingUser}
+                onClick={handleSaveUser}
+                className="px-4 py-2 text-sm font-semibold bg-[#4f46e5] text-white rounded-lg hover:bg-[#4338ca] disabled:opacity-60"
+              >
+                {savingUser ? 'Saving...' : 'Save User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-[#e2e8f0] p-6 space-y-4">
+            <div>
+              <h4 className="text-[#0f172a] text-lg font-bold">Delete User</h4>
+              <p className="text-sm text-[#64748b] mt-1">
+                Are you sure you want to delete {deleteTarget.name || deleteTarget.email}?
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 text-sm font-semibold text-[#475569] hover:text-[#0f172a]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingUser}
+                onClick={handleDeleteUser}
+                className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60"
+              >
+                {savingUser ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tempPasswordModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

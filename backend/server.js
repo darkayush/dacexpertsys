@@ -9,6 +9,8 @@ import usersRoutes from './routes/users.routes.js';
 import casesRoutes from './routes/cases.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
+import evidenceRoutes from './routes/evidence.routes.js';
+import rulesRoutes from './routes/rules.routes.js';
 import { verifyToken } from './middleware/auth.middleware.js';
 
 const app = express();
@@ -47,6 +49,8 @@ app.use('/cases', verifyToken, casesRoutes);
 app.use('/api/users', verifyToken, usersRoutes);
 app.use('/api/cases', verifyToken, casesRoutes);
 app.use('/api/notifications', verifyToken, notificationsRoutes);
+app.use('/api/evidence', verifyToken, evidenceRoutes);
+app.use('/api/rules', verifyToken, rulesRoutes);
 
 async function startServer() {
   try {

@@ -185,7 +185,18 @@ function StepStudentInfo({
   );
 }
 
-function StepIncidentDetails({ form, set, onOffenseTypeChange, errors, getInputClass }) {
+function StepIncidentDetails({
+  form,
+  set,
+  onOffenseTypeChange,
+  errors,
+  getInputClass,
+  description,
+  onDescriptionChange,
+  listening,
+  speechError,
+  onToggleListening,
+}) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center gap-2 mb-1">
@@ -405,13 +416,34 @@ function StepIncidentDetails({ form, set, onOffenseTypeChange, errors, getInputC
       </AnimatePresence>
 
       <Field label="Incident Description">
-        <textarea
-          value={form.description}
-          onChange={set('description')}
-          rows={5}
-          placeholder="Describe the incident in detail, including time, location, and involved parties..."
-          className={`${inputCls} resize-y`}
-        />
+        <div className="relative">
+          <textarea
+            value={description}
+            onChange={onDescriptionChange}
+            rows={5}
+            placeholder="Describe the incident in detail, including time, location, and involved parties..."
+            className={`${inputCls} resize-y w-full pr-14`}
+          />
+          <button
+            type="button"
+            onClick={onToggleListening}
+            aria-label={listening ? 'Stop listening' : 'Start voice input'}
+            title={listening ? 'Listening...' : 'Start voice input'}
+            className={`absolute bottom-3 right-3 h-10 w-10 rounded-full border shadow-sm flex items-center justify-center transition-all ${
+              listening
+                ? 'bg-red-500 text-white border-red-500 animate-pulse'
+                : 'bg-white text-[#64748b] border-[#cbd5e1] hover:text-[#4f46e5] hover:border-[#4f46e5] hover:bg-[#f8fafc]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">mic</span>
+          </button>
+          {listening ? (
+            <span className="absolute bottom-14 right-2 rounded-md bg-[#0f172a] px-2 py-1 text-[11px] font-medium text-white shadow-sm">
+              Listening...
+            </span>
+          ) : null}
+        </div>
+        {speechError ? <p className="text-xs text-red-600">{speechError}</p> : null}
       </Field>
     </div>
   );
@@ -667,6 +699,10 @@ export default function RegisterCase() {
   const [error, setError] = useState(null);
   const [caseResult, setCaseResult] = useState(null);
   const [studentId, setStudentId] = useState(null);
+  const [description, setDescription] = useState('');
+  const [listening, setListening] = useState(false);
+  const [speechError, setSpeechError] = useState('');
+  const recognitionRef = useRef(null);
 
   const handleEvidenceSelect = (file) => {
     setEvidenceError('');
@@ -704,6 +740,64 @@ export default function RegisterCase() {
       if (!prev[field]) return prev;
       return { ...prev, [field]: '' };
     });
+  };
+
+  const handleDescriptionChange = (e) => {
+    const value = e.target.value;
+    setDescription(value);
+    setForm((p) => ({ ...p, description: value }));
+  };
+
+  const handleToggleListening = () => {
+    setSpeechError('');
+
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setListening(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechError('Speech recognition is not supported in this browser.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (!transcript) return;
+
+      setDescription((current) => {
+        const nextDescription = current ? `${current} ${transcript}` : transcript;
+        setForm((p) => ({ ...p, description: nextDescription }));
+        return nextDescription;
+      });
+    };
+
+    recognition.onerror = (event) => {
+      setSpeechError(event.error ? `Speech recognition error: ${event.error}` : 'Speech recognition failed.');
+      setListening(false);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setSpeechError('Speech recognition could not be started.');
+    }
   };
 
   const getInputClass = (field) => (
@@ -897,13 +991,6 @@ export default function RegisterCase() {
         throw new Error('Please provide enrollment number and offense type before submitting.');
       }
 
-      let evidenceUrl = evidenceUploadedUrl;
-      if (evidenceFile && !evidenceUrl) {
-        const uploadPayload = await uploadEvidence(evidenceFile);
-        evidenceUrl = uploadPayload?.fileUrl || '';
-        setEvidenceUploadedUrl(evidenceUrl);
-      }
-
       const payload = await createCase({
         student_id: studentId,
         offense_type: form.offenseType === 'Other' ? (form.customOffense || 'Other') : form.offenseType,
@@ -911,8 +998,15 @@ export default function RegisterCase() {
         location: `${form.hostel || ''}${form.roomNo ? ` Room ${form.roomNo}` : ''}`.trim() || null,
         incident_date: null,
         severity: 'low',
-        evidence_url: evidenceUrl || null,
+        evidence_url: null,
       });
+
+      let evidenceUrl = evidenceUploadedUrl;
+      if (evidenceFile && !evidenceUrl) {
+        const uploadPayload = await uploadEvidence(evidenceFile, { caseId: payload.id });
+        evidenceUrl = uploadPayload?.fileUrl || '';
+        setEvidenceUploadedUrl(evidenceUrl);
+      }
 
       setCaseResult({
         token: `#${payload.id}`,
@@ -949,13 +1043,18 @@ export default function RegisterCase() {
       errors={errors}
       getInputClass={getInputClass}
     />,
-    <StepIncidentDetails
-      form={form}
-      set={set}
-      onOffenseTypeChange={handleOffenseTypeChange}
-      errors={errors}
-      getInputClass={getInputClass}
-    />,
+      <StepIncidentDetails
+        form={form}
+        set={set}
+        onOffenseTypeChange={handleOffenseTypeChange}
+        errors={errors}
+        getInputClass={getInputClass}
+        description={description}
+        onDescriptionChange={handleDescriptionChange}
+        listening={listening}
+        speechError={speechError}
+        onToggleListening={handleToggleListening}
+      />,
     <StepEvidence
       dragOver={dragOver}
       setDragOver={setDragOver}

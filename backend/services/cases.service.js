@@ -3,6 +3,7 @@ import {
   createNotificationsForRoleService,
   createNotificationService,
 } from './notifications.service.js';
+import { createCaseTimelineService } from './timeline.service.js';
 
 function canActOnRole(role) {
   return ['chief_warden', 'dsw', 'admin'].includes(String(role || '').toLowerCase());
@@ -140,6 +141,15 @@ export async function createCaseService(payload, requesterId) {
       client,
     );
 
+    await createCaseTimelineService(
+      {
+        caseId: createdCase.id,
+        event: 'Case created and assigned to Chief Warden.',
+        performedBy: requesterId,
+      },
+      client,
+    );
+
     await client.query('COMMIT');
     return createdCase;
   } catch (error) {
@@ -250,6 +260,15 @@ export async function approveCaseService(caseId, actor) {
       );
     }
 
+    await createCaseTimelineService(
+      {
+        caseId: updatedCase.id,
+        event: `Workflow updated to ${nextState.status.replace('_', ' ')}.`,
+        performedBy: actor.id,
+      },
+      client,
+    );
+
     await client.query('COMMIT');
     return updatedCase;
   } catch (error) {
@@ -258,4 +277,61 @@ export async function approveCaseService(caseId, actor) {
   } finally {
     client.release();
   }
+}
+
+export async function getCaseByIdService(caseId) {
+  const result = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
+  return result.rows[0] || null;
+}
+
+export async function updateCaseService(caseId, payload, actor) {
+  const updates = [];
+  const values = [];
+
+  const allowedFields = {
+    offense_type: 'offense_type',
+    description: 'description',
+    location: 'location',
+    incident_date: 'incident_date',
+    severity: 'severity',
+    penalty_points: 'penalty_points',
+    evidence_url: 'evidence_url',
+  };
+
+  Object.entries(allowedFields).forEach(([key, column]) => {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      values.push(payload[key]);
+      updates.push(`${column} = $${values.length}`);
+    }
+  });
+
+  if (!updates.length) {
+    return getCaseByIdService(caseId);
+  }
+
+  values.push(caseId);
+  const query = `
+    UPDATE cases
+    SET ${updates.join(', ')}
+    WHERE id = $${values.length}
+    RETURNING *
+  `;
+
+  const result = await pool.query(query, values);
+  const updatedCase = result.rows[0] || null;
+
+  if (updatedCase && actor?.id) {
+    await createCaseTimelineService({
+      caseId: updatedCase.id,
+      event: 'Case details updated.',
+      performedBy: actor.id,
+    });
+  }
+
+  return updatedCase;
+}
+
+export async function deleteCaseService(caseId) {
+  const result = await pool.query('DELETE FROM cases WHERE id = $1 RETURNING *', [caseId]);
+  return result.rows[0] || null;
 }

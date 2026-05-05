@@ -10,7 +10,19 @@ ALTER TYPE case_status ADD VALUE IF NOT EXISTS 'resolved';
 
 -- Add workflow columns on cases.
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS created_by INT REFERENCES users(id);
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS reported_by INT REFERENCES users(id);
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS resolved_by INT REFERENCES users(id);
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS assigned_to_role user_role;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS offense_type TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS status case_status;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS severity case_severity;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS incident_date DATE;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS penalty_points INT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS severity_score FLOAT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS evidence_url TEXT;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
 
 -- Notifications table compatibility updates.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS case_id INT REFERENCES cases(id);

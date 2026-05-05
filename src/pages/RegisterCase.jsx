@@ -901,13 +901,6 @@ export default function RegisterCase() {
         throw new Error('Please provide enrollment number and offense type before submitting.');
       }
 
-      let evidenceUrl = evidenceUploadedUrl;
-      if (evidenceFile && !evidenceUrl) {
-        const uploadPayload = await uploadEvidence(evidenceFile);
-        evidenceUrl = uploadPayload?.fileUrl || '';
-        setEvidenceUploadedUrl(evidenceUrl);
-      }
-
       const payload = await createCase({
         student_id: studentId,
         offense_type: form.offenseType === 'Other' ? (form.customOffense || 'Other') : form.offenseType,
@@ -915,8 +908,15 @@ export default function RegisterCase() {
         location: `${form.hostel || ''}${form.roomNo ? ` Room ${form.roomNo}` : ''}`.trim() || null,
         incident_date: null,
         severity: 'low',
-        evidence_url: evidenceUrl || null,
+        evidence_url: null,
       });
+
+      let evidenceUrl = evidenceUploadedUrl;
+      if (evidenceFile && !evidenceUrl) {
+        const uploadPayload = await uploadEvidence(evidenceFile, { caseId: payload.id });
+        evidenceUrl = uploadPayload?.fileUrl || '';
+        setEvidenceUploadedUrl(evidenceUrl);
+      }
 
       setCaseResult({
         token: `#${payload.id}`,

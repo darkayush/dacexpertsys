@@ -5,7 +5,6 @@ import {
   getUserByEmail,
   getUserAuthById,
   updateUserPasswordById,
-  createUserFromGoogle,
 } from '../services/auth.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dacexpertsys_dev_secret_change_me';
@@ -85,7 +84,7 @@ export async function loginWithGoogleController(req, res) {
     }
 
     if (!GOOGLE_CLIENT_ID) {
-      return res.status(500).json({ error: 'Google login is not configured' });
+      return res.status(500).json({ error: 'User not configured' });
     }
 
     const ticket = await googleClient.verifyIdToken({
@@ -102,17 +101,9 @@ export async function loginWithGoogleController(req, res) {
     const name = payload.name || payload.given_name || 'Student';
     const photoURL = payload.picture || null;
 
-    let user = await getUserByEmail(email);
+    const user = await getUserByEmail(email);
     if (!user) {
-      user = await createUserFromGoogle({
-        name,
-        email,
-        role: GOOGLE_DEFAULT_ROLE,
-      });
-    }
-
-    if (!user) {
-      return res.status(500).json({ error: 'Failed to create user' });
+      return res.status(403).json({ error: 'Account not provisioned. Contact admin.' });
     }
 
     const response = buildAuthResponse(user, { photoURL });

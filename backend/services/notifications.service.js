@@ -60,3 +60,44 @@ export async function markNotificationReadService(notificationId, userId) {
   const result = await pool.query(query, [notificationId, userId]);
   return result.rows[0] || null;
 }
+
+export async function updateNotificationService(notificationId, payload) {
+  const updates = [];
+  const values = [];
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'message')) {
+    values.push(payload.message);
+    updates.push(`message = $${values.length}`);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'is_read')) {
+    values.push(Boolean(payload.is_read));
+    updates.push(`is_read = $${values.length}`);
+  }
+
+  if (!updates.length) {
+    const existing = await pool.query(
+      'SELECT id, user_id, message, case_id, is_read, created_at FROM notifications WHERE id = $1',
+      [notificationId],
+    );
+    return existing.rows[0] || null;
+  }
+
+  values.push(notificationId);
+  const query = `
+    UPDATE notifications
+    SET ${updates.join(', ')}
+    WHERE id = $${values.length}
+    RETURNING id, user_id, message, case_id, is_read, created_at
+  `;
+  const result = await pool.query(query, values);
+  return result.rows[0] || null;
+}
+
+export async function deleteNotificationService(notificationId) {
+  const result = await pool.query(
+    'DELETE FROM notifications WHERE id = $1 RETURNING id, user_id, message, case_id, is_read, created_at',
+    [notificationId],
+  );
+  return result.rows[0] || null;
+}

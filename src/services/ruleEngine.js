@@ -10,9 +10,6 @@
  *   applyPenalty(level)          → Promise<{ fine, penaltyPoints }>
  */
 
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../firebase/firebaseConfig';
-
 // ─── DAC Policy Levels (fallback if Firestore unavailable) ───────────────────
 const POLICY_FALLBACK = {
   1: { fine: 1000,  penaltyPoints: 10  },
@@ -42,28 +39,9 @@ const THRESHOLDS = [
  * @returns {Promise<string>}  e.g. "DAC-2026-1001"
  */
 export async function generateToken() {
-  const year   = new Date().getFullYear();
-  const prefix = `DAC-${year}-`;
-
-  const q = query(
-    collection(db, 'cases'),
-    where('token', '>=', prefix),
-    where('token', '<',  `DAC-${year + 1}-`),
-    orderBy('token', 'desc'),
-    limit(1),
-  );
-
-  const snap = await getDocs(q);
-
-  if (snap.empty) {
-    // First case of the year
-    return `${prefix}1001`;
-  }
-
-  const lastToken  = snap.docs[0].data().token;          // "DAC-2026-1042"
-  const lastSeq    = parseInt(lastToken.split('-')[2], 10); // 1042
-  const nextSeq    = String(lastSeq + 1).padStart(4, '0');  // "1043"
-  return `${prefix}${nextSeq}`;
+  const year = new Date().getFullYear();
+  const seq = Math.floor(1000 + Math.random() * 9000);
+  return `DAC-${year}-${seq}`;
 }
 
 // ─── Severity Calculation ─────────────────────────────────────────────────────
@@ -135,17 +113,5 @@ export function determineOffenseLevel(score) {
  * @returns {Promise<{ fine: number, penaltyPoints: number }>}
  */
 export async function applyPenalty(level) {
-  try {
-    const q    = query(collection(db, 'offenses'), where('level', '==', level), limit(1));
-    const snap = await getDocs(q);
-
-    if (!snap.empty) {
-      const { fine, penaltyPoints } = snap.docs[0].data();
-      return { fine, penaltyPoints };
-    }
-  } catch (err) {
-    console.warn('[ruleEngine] Firestore penalty lookup failed, using fallback:', err);
-  }
-
   return POLICY_FALLBACK[level] ?? POLICY_FALLBACK[4];
 }

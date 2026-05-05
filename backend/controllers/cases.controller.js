@@ -3,6 +3,9 @@ import {
   getAllCasesService,
   approveCaseService,
   getCaseHistoryService,
+  getCaseByIdService,
+  updateCaseService,
+  deleteCaseService,
 } from '../services/cases.service.js';
 
 export async function getAllCasesController(req, res) {
@@ -35,8 +38,8 @@ export async function createCaseController(req, res) {
     const requesterRole = String(req.user?.role || '').toLowerCase();
     const requesterId = Number(req.user?.sub);
 
-    if (requesterRole !== 'warden') {
-      return res.status(403).json({ error: 'Only warden can create cases' });
+    if (!['warden', 'chief_warden'].includes(requesterRole)) {
+      return res.status(403).json({ error: 'Only warden or chief warden can create cases' });
     }
 
     if (!studentId || !offenseType) {
@@ -49,6 +52,80 @@ export async function createCaseController(req, res) {
     console.error('Error creating case:', error);
     const details = process.env.NODE_ENV === 'production' ? undefined : error?.message;
     return res.status(500).json({ error: 'Failed to create case', details });
+  }
+}
+
+export async function getCaseByIdController(req, res) {
+  try {
+    const caseId = Number(req.params.id);
+    if (!caseId) {
+      return res.status(400).json({ error: 'A valid case id is required' });
+    }
+
+    const caseItem = await getCaseByIdService(caseId);
+    if (!caseItem) {
+      return res.status(404).json({ error: 'Case not found' });
+    }
+
+    return res.status(200).json(caseItem);
+  } catch (error) {
+    console.error('Error fetching case:', error);
+    return res.status(500).json({ error: 'Failed to fetch case' });
+  }
+}
+
+export async function updateCaseController(req, res) {
+  try {
+    const caseId = Number(req.params.id);
+    if (!caseId) {
+      return res.status(400).json({ error: 'A valid case id is required' });
+    }
+
+    const actor = {
+      id: Number(req.user?.sub),
+      role: String(req.user?.role || '').toLowerCase(),
+    };
+
+    const current = await getCaseByIdService(caseId);
+    if (!current) {
+      return res.status(404).json({ error: 'Case not found' });
+    }
+
+    if (actor.role !== 'admin') {
+      if (actor.role !== 'warden' || Number(current.created_by) !== actor.id) {
+        return res.status(403).json({ error: 'Only admin or the case owner can update this case' });
+      }
+
+      if (String(current.status || '').toLowerCase() !== 'pending_chief') {
+        return res.status(400).json({ error: 'Only pending cases can be updated by the case owner' });
+      }
+    }
+
+    const updatedCase = await updateCaseService(caseId, req.body || {}, actor);
+
+    return res.status(200).json(updatedCase);
+  } catch (error) {
+    console.error('Error updating case:', error);
+    return res.status(500).json({ error: 'Failed to update case' });
+  }
+}
+
+export async function deleteCaseController(req, res) {
+  try {
+    const caseId = Number(req.params.id);
+    if (!caseId) {
+      return res.status(400).json({ error: 'A valid case id is required' });
+    }
+
+    const deletedCase = await deleteCaseService(caseId);
+    if (!deletedCase) {
+      return res.status(404).json({ error: 'Case not found' });
+    }
+
+    return res.status(200).json({ message: 'Case deleted', case: deletedCase });
+  } catch (error) {
+    console.error('Error deleting case:', error);
+    return res.status(500).json({ error: 'Failed to delete case' });
   }
 }
 
@@ -103,24 +180,5 @@ export async function getCaseHistoryController(req, res) {
   } catch (error) {
     console.error('Error fetching case history:', error);
     res.status(500).json({ error: 'Failed to fetch case history' });
-  }
-}
-
-export async function uploadEvidenceController(req, res) {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Evidence file is required' });
-    }
-
-    const fileUrl = `/uploads/evidence/${req.file.filename}`;
-    return res.status(201).json({
-      fileUrl,
-      fileName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-    });
-  } catch (error) {
-    console.error('Evidence upload error:', error);
-    return res.status(500).json({ error: 'Failed to upload evidence' });
   }
 }

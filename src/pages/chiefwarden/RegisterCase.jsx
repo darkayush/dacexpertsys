@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import ChiefWardenSidebar from '../../components/ChiefWardenSidebar';
-import { getUsers } from '../../services/api';
+import { createCase, getUsers } from '../../services/api';
 
 const offenseOptions = [
   'Plagiarism', 'Vandalism', 'Exam Malpractice', 'Attendance',
@@ -620,6 +620,7 @@ export default function RegisterCase() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [caseResult, setCaseResult] = useState(null);
+  const [studentId, setStudentId] = useState(null);
 
   const set = (field) => (e) => {
     const value = e.target.value;
@@ -661,12 +662,14 @@ export default function RegisterCase() {
 
       const user = users.find((entry) => String(entry.enrollment_no || '').trim().toLowerCase() === enrollment);
       if (!user) {
+        setStudentId(null);
         setNameLocked(false);
         setLookupStatusType('error');
         setLookupStatusMessage('No student found.');
         return;
       }
 
+      setStudentId(user.id);
       setNameLocked(true);
       setForm((prev) => ({
         ...prev,
@@ -689,6 +692,7 @@ export default function RegisterCase() {
   const handleEnrollmentChange = (e) => {
     setLookupStatusType('');
     setLookupStatusMessage('');
+    setStudentId(null);
     setNameLocked(false);
     setForm((p) => ({ ...p, rollNumber: e.target.value }));
     setErrors((prev) => {
@@ -813,9 +817,27 @@ export default function RegisterCase() {
     setError(null);
     setLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 1200));
-      const token = `DAC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-      setCaseResult({ token, offenseLevel: 2, severityScore: 65, fine: 5000, penaltyPoints: 10 });
+      if (!studentId || !form.offenseType) {
+        throw new Error('Please provide enrollment number and offense type before submitting.');
+      }
+
+      const payload = await createCase({
+        student_id: studentId,
+        offense_type: form.offenseType === 'Other' ? (form.customOffense || 'Other') : form.offenseType,
+        description: form.description || null,
+        location: `${form.hostel || ''}${form.roomNo ? ` Room ${form.roomNo}` : ''}`.trim() || null,
+        incident_date: null,
+        severity: 'low',
+        evidence_url: null,
+      });
+
+      setCaseResult({
+        token: `#${payload.id}`,
+        offenseLevel: 1,
+        severityScore: 25,
+        fine: Number(payload.penalty_points || 0) * 100,
+        penaltyPoints: Number(payload.penalty_points || 0),
+      });
     } catch (err) {
       setError(err?.message ?? 'Failed to submit case. Please try again.');
     } finally {

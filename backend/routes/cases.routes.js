@@ -6,10 +6,20 @@ import { fileURLToPath } from 'url';
 import {
   createCaseController,
   getAllCasesController,
+  getCaseByIdController,
+  updateCaseController,
+  deleteCaseController,
   approveCaseController,
   getCaseHistoryController,
-  uploadEvidenceController,
 } from '../controllers/cases.controller.js';
+import { uploadEvidenceController } from '../controllers/evidence.controller.js';
+import {
+  getCaseTimelineController,
+  createCaseTimelineController,
+  updateCaseTimelineController,
+  deleteCaseTimelineController,
+} from '../controllers/timeline.controller.js';
+import { requireRoles } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
@@ -43,8 +53,15 @@ const upload = multer({
 
 router.get('/', getAllCasesController);
 router.get('/history', getCaseHistoryController);
+router.get('/:id/timeline', getCaseTimelineController);
+router.post('/:id/timeline', requireRoles('admin'), createCaseTimelineController);
+router.put('/:id/timeline/:timelineId', requireRoles('admin'), updateCaseTimelineController);
+router.delete('/:id/timeline/:timelineId', requireRoles('admin'), deleteCaseTimelineController);
 router.post('/upload-evidence', upload.single('file'), uploadEvidenceController);
 router.post('/', createCaseController);
+router.get('/:id', getCaseByIdController);
+router.put('/:id', updateCaseController);
+router.delete('/:id', requireRoles('admin'), deleteCaseController);
 router.put('/:id/approve', approveCaseController);
 
 export default router;

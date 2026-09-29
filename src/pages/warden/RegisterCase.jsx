@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import WardenSidebar from '../../components/WardenSidebar';
-import { createCase, getUsers, uploadEvidence } from '../../services/api';
+import DACLayout from '../../components/layout/DACLayout';
+import StudentCard from '../../components/ui/StudentCard';
+import StatusBadge from '../../components/ui/StatusBadge';
+import { createCase, getUsers, getStudentHistory, uploadEvidence } from '../../services/api';
 
 const offenseOptions = [
   'Plagiarism', 'Vandalism', 'Exam Malpractice', 'Attendance',
@@ -12,51 +14,48 @@ const offenseOptions = [
 const STEPS = ['Student Info', 'Incident Details', 'Evidence', 'Review', 'Submit'];
 
 function ProgressBar({ steps, currentStep }) {
-  const percentage = steps.length <= 1 ? 100 : Math.round((currentStep / (steps.length - 1)) * 100);
-  const currentLabel = steps[currentStep] ?? steps[steps.length - 1];
-
   return (
-    <div className="w-full space-y-2">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-[#5c56e9] truncate">{currentLabel}</span>
-        <span className="text-[#64748b] font-medium whitespace-nowrap ml-2">
-          Step {currentStep + 1} of {steps.length}
-        </span>
-      </div>
-      <div className="relative h-5 rounded-full bg-[#e2e8f0] overflow-hidden shadow-inner">
+    <div className="w-full bg-white rounded-2xl border border-[#edf2f7] p-5 shadow-xs">
+      <div className="flex items-center justify-between relative">
+        {/* Background track line */}
+        <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-0.5 bg-[#edf2f7] z-0" />
+        {/* Active progress fill line */}
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#5c56e9] to-[#3b5fc0] transition-all duration-500 ease-in-out flex items-center justify-end pr-2"
-          style={{ width: `${Math.max(percentage, 4)}%` }}
-        >
-          {percentage >= 12 && (
-            <span className="text-white text-xs font-bold leading-none">{percentage}%</span>
-          )}
-        </div>
-        {percentage < 12 && (
-          <span
-            className="absolute top-1/2 -translate-y-1/2 text-xs font-bold text-[#5c56e9]"
-            style={{ left: `calc(${Math.max(percentage, 4)}% + 6px)` }}
-          >
-            {percentage}%
-          </span>
-        )}
-      </div>
-      <div className="flex justify-between">
-        {steps.map((step, index) => (
-          <span
-            key={index}
-            className={`text-[10px] font-medium text-center transition-colors duration-300 ${
-              index < currentStep
-                ? 'text-[#4f46e5]'
-                : index === currentStep
-                ? 'text-[#4f46e5] font-bold'
-                : 'text-[#94a3b8]'
-            }`}
-            style={{ width: `${100 / steps.length}%` }}
-          >
-            {step}
-          </span>
-        ))}
+          className="absolute top-1/2 left-8 -translate-y-1/2 h-0.5 bg-gradient-to-r from-[#5c56e9] to-[#3b82f6] z-0 transition-all duration-500 ease-in-out"
+          style={{ width: `${(currentStep / (steps.length - 1)) * 84}%` }}
+        />
+
+        {steps.map((step, idx) => {
+          const isDone = idx < currentStep;
+          const isCurrent = idx === currentStep;
+
+          return (
+            <div key={step} className="flex flex-col items-center relative z-10">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all duration-300 ${
+                  isDone
+                    ? 'bg-[#5c56e9] text-white shadow-sm'
+                    : isCurrent
+                    ? 'bg-gradient-to-br from-[#5c56e9] to-[#3b82f6] text-white shadow-md shadow-[#5c56e9]/25 ring-4 ring-[#5c56e9]/15'
+                    : 'bg-white border border-[#e2e8f0] text-[#94a3b8]'
+                }`}
+              >
+                {isDone ? (
+                  <span className="material-symbols-outlined text-[16px]">check</span>
+                ) : (
+                  <span>{idx + 1}</span>
+                )}
+              </div>
+              <span
+                className={`mt-2 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  isCurrent ? 'text-[#5c56e9]' : isDone ? 'text-[#0f172a]' : 'text-[#94a3b8]'
+                }`}
+              >
+                {step}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -65,14 +64,14 @@ function ProgressBar({ steps, currentStep }) {
 function Field({ label, children }) {
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[#334155] text-sm font-medium">{label}</label>
+      <label className="text-[#334155] text-xs font-bold uppercase tracking-wider">{label}</label>
       {children}
     </div>
   );
 }
 
 const inputCls =
-  'bg-[#f8fafc] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-[#0f172a] text-base placeholder:text-[#94a3b8] focus:outline-none focus:border-[#4f46e5] focus:ring-1 focus:ring-[#4f46e5] transition-colors';
+  'bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-3.5 py-2.5 text-[#0f172a] text-sm placeholder:text-[#94a3b8] focus:outline-none focus:border-[#5c56e9] focus:ring-2 focus:ring-[#5c56e9]/20 transition-all font-medium';
 
 function toTitleCase(value = '') {
   return String(value)
@@ -102,82 +101,152 @@ function StepStudentInfo({
   lookupStatusMessage,
   errors,
   getInputClass,
+  studentHistory,
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">person</span>
-        <h2 className="text-[#0f172a] font-bold text-[18px] leading-7">Student Information</h2>
+      <div className="flex items-center gap-2.5 pb-3 border-b border-[#edf2f7]">
+        <div className="w-8 h-8 rounded-xl bg-[#5c56e9]/10 text-[#5c56e9] flex items-center justify-center font-bold">
+          <span className="material-symbols-outlined text-[18px]">person</span>
+        </div>
+        <div>
+          <h2 className="text-[#0f172a] font-bold text-base leading-tight">Student Information</h2>
+          <p className="text-[#94a3b8] text-xs">Lookup student by university enrollment ID</p>
+        </div>
       </div>
+
+      {studentHistory?.student && (
+        <StudentCard
+          student={studentHistory.student}
+          previousPoints={studentHistory.total_points || 0}
+          caseCount={studentHistory.cases?.length || 0}
+        />
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
         <Field label="Enrollment Number *">
-          <input
-            type="text"
-            value={form.rollNumber}
-            onChange={onEnrollmentChange}
-            onBlur={onEnrollmentBlur}
-            onKeyDown={onEnrollmentKeyDown}
-            data-field="rollNumber"
-            placeholder=""
-            className={getInputClass('rollNumber')}
-          />
-          {lookupLoading ? <p className="text-xs text-[#64748b]">Looking up student details...</p> : null}
-          {errors.rollNumber ? <p className="text-xs text-red-600">{errors.rollNumber}</p> : null}
+          <div className="relative">
+            <input
+              type="text"
+              value={form.rollNumber}
+              onChange={onEnrollmentChange}
+              onBlur={onEnrollmentBlur}
+              onKeyDown={onEnrollmentKeyDown}
+              data-field="rollNumber"
+              placeholder="e.g. 240123"
+              className={getInputClass('rollNumber')}
+            />
+            {lookupLoading && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="w-4 h-4 border-2 border-[#5c56e9] border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
+          {lookupLoading ? <p className="text-xs text-[#64748b]">Looking up student in directory...</p> : null}
+          {errors.rollNumber ? <p className="text-xs text-red-600 font-medium">{errors.rollNumber}</p> : null}
         </Field>
+
         <Field label="Student Name">
           <input
             type="text"
             value={form.studentName}
-            placeholder=""
+            placeholder="Auto-populated upon lookup"
             readOnly
-            className={`${inputCls} bg-[#f1f5f9]`}
+            className={`${inputCls} bg-[#f1f5f9] cursor-not-allowed`}
           />
         </Field>
+
         <Field label="Department">
           <input
             type="text"
             value={form.department}
             onChange={set('department')}
-            placeholder=""
+            placeholder="Department / Program"
             className={inputCls}
           />
         </Field>
+
         <Field label="Year">
           <input
             type="text"
             value={form.year}
             onChange={set('year')}
-            placeholder=""
+            placeholder="e.g. 2nd Year"
             className={inputCls}
           />
         </Field>
+
         <Field label="Hostel">
           <input
             type="text"
             value={form.hostel}
             onChange={set('hostel')}
-            placeholder=""
+            placeholder="Hostel name or block"
             className={inputCls}
           />
         </Field>
+
         <Field label="Room Number">
           <input
             type="text"
             value={form.roomNo}
             onChange={set('roomNo')}
-            placeholder=""
+            placeholder="Room number"
             className={inputCls}
           />
         </Field>
+
         {lookupStatusMessage ? (
           <div
-            className={`sm:col-span-2 rounded-md px-3 py-2 text-xs font-medium ${
+            className={`sm:col-span-2 rounded-xl px-4 py-3 text-xs font-semibold flex items-center gap-2 ${
               lookupStatusType === 'success'
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-red-50 text-red-700 border border-red-200'
             }`}
           >
+            <span className="material-symbols-outlined text-[16px]">
+              {lookupStatusType === 'success' ? 'check_circle' : 'error'}
+            </span>
             {lookupStatusMessage}
+          </div>
+        ) : null}
+
+        {studentHistory ? (
+          <div className="sm:col-span-2 rounded-2xl border border-[#edf2f7] bg-[#f8fafc] p-4 text-xs text-[#334155] space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#0f172a] text-xs">Prior Disciplinary History (Informational)</span>
+              <span className="text-[#64748b] text-[11px]">
+                Total Prior Cases: <strong className="text-[#0f172a]">{studentHistory.summary.total}</strong> · DAC Points: <strong className="text-[#5c56e9]">{studentHistory.student.total_points || 0}</strong>
+              </span>
+            </div>
+            {studentHistory.cases?.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-[#edf2f7] bg-white">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#f8fafc] border-b border-[#edf2f7] text-[10px] font-bold text-[#94a3b8] uppercase">
+                    <tr>
+                      <th className="px-3 py-2">Case ID</th>
+                      <th className="px-3 py-2">Offense</th>
+                      <th className="px-3 py-2">Substance</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf2f7]">
+                    {studentHistory.cases.slice(0, 5).map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-3 py-2 font-mono font-medium">{item.case_id || item.id}</td>
+                        <td className="px-3 py-2 font-medium text-[#0f172a]">{item.offense_type}</td>
+                        <td className="px-3 py-2 text-[#64748b]">{item.substance_type || '—'}</td>
+                        <td className="px-3 py-2 text-[#64748b]">{item.incident_date ? String(item.incident_date).slice(0, 10) : '—'}</td>
+                        <td className="px-3 py-2"><StatusBadge status={item.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-[#64748b] text-xs italic">Student has no previous offenses on record.</p>
+            )}
           </div>
         ) : null}
       </div>
@@ -699,6 +768,7 @@ export default function RegisterCase() {
   const [error, setError] = useState(null);
   const [caseResult, setCaseResult] = useState(null);
   const [studentId, setStudentId] = useState(null);
+  const [studentHistory, setStudentHistory] = useState(null);
   const [description, setDescription] = useState('');
   const [listening, setListening] = useState(false);
   const [speechError, setSpeechError] = useState('');
@@ -839,6 +909,7 @@ export default function RegisterCase() {
       }
 
       setStudentId(user.id);
+      setStudentHistory(await getStudentHistory(enrollment));
       setNameLocked(true);
 
       setForm((prev) => ({
@@ -863,6 +934,7 @@ export default function RegisterCase() {
     setLookupStatusType('');
     setLookupStatusMessage('');
     setStudentId(null);
+    setStudentHistory(null);
     setNameLocked(false);
     setForm((p) => ({ ...p, rollNumber: e.target.value }));
     setErrors((prev) => {
@@ -1042,6 +1114,7 @@ export default function RegisterCase() {
       lookupStatusMessage={lookupStatusMessage}
       errors={errors}
       getInputClass={getInputClass}
+      studentHistory={studentHistory}
     />,
       <StepIncidentDetails
         form={form}
@@ -1073,135 +1146,134 @@ export default function RegisterCase() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f6f6f8] font-[Inter,sans-serif]">
-      <WardenSidebar />
-      <main className="pt-14 md:pt-0 md:pl-64 overflow-y-auto py-8 md:py-[60px] px-4 md:px-8">
-        <div className="max-w-[1000px] mx-auto flex flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-[#0f172a] text-[28px] md:text-[30px] font-black tracking-[-0.9px] leading-tight md:pt-10 pt-5">
-              Register New Disciplinary Case
-            </h1>
-            <p className="text-[#64748b] text-base leading-7">
-              Submit details below to initiate an automated disciplinary review.
-            </p>
-            <div className="pb-2">
-              <ProgressBar steps={STEPS} currentStep={currentStep} />
+    <DACLayout>
+      <div className="max-w-6xl mx-auto flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-[#1e1b4b] text-2xl md:text-3xl font-black tracking-tight">
+            Register New Disciplinary Case
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm font-medium">
+            Record a disciplinary incident, attach evidence, and submit it for committee review.
+          </p>
+          <div className="pt-2">
+            <ProgressBar steps={STEPS} currentStep={currentStep} />
+          </div>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex-1 min-w-0 w-full">
+            <div className="bg-white rounded-[28px] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-6 md:p-8 flex flex-col gap-6">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentStep}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: 'easeInOut' }}
+                >
+                  {stepContent[currentStep]}
+                </motion.div>
+              </AnimatePresence>
+
+              {!(isLast && caseResult) && (
+                <div className="flex items-center justify-between pt-5 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={goPrev}
+                    disabled={isFirst}
+                    className="flex items-center gap-2 px-5 py-2.5 text-slate-500 text-xs font-bold hover:text-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                    Previous
+                  </button>
+
+                  {!isLast && (
+                    <button
+                      type="button"
+                      onClick={goNext}
+                      className="flex items-center gap-2 px-7 py-2.5 bg-[#5c54eb] hover:bg-indigo-700 text-white text-xs font-bold rounded-full shadow-md shadow-purple-500/20 transition-all active:scale-95"
+                    >
+                      <span>Next Step</span>
+                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-col lg:flex-row gap-8 items-start">
-            <div className="flex-1 min-w-0">
-              <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-[0_1px_2px_rgba(0,0,0,0.05)] p-8 flex flex-col gap-6">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={currentStep}
-                    initial={{ opacity: 0, x: 24 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -24 }}
-                    transition={{ duration: 0.22, ease: 'easeInOut' }}
-                  >
-                    {stepContent[currentStep]}
-                  </motion.div>
-                </AnimatePresence>
+          <div className="w-full lg:w-[320px] lg:flex-shrink-0 flex flex-col gap-4">
+            <div className="bg-white border border-slate-100 rounded-[28px] shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-5 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#5c54eb] text-[18px]">info</span>
+                <h3 className="text-[#1e1b4b] font-bold text-sm leading-5">Registration Guide</h3>
+              </div>
+              <div className="flex flex-col gap-3">
+                {[
+                  'Type student Roll Number and press Enter to auto-retrieve profile.',
+                  'Review prior violation records to assess appropriate severity.',
+                  'Attach witness statements, incident logs, or media files.',
+                  'Summary will generate a verifiable tracking token upon submission.',
+                ].map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-lg bg-purple-50 text-[#5c54eb] flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-[11px] font-bold">{i + 1}</span>
+                    </div>
+                    <p className="text-slate-500 text-xs leading-relaxed">{tip}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-                {!(isLast && caseResult) && (
-                  <div className="flex items-center justify-between pt-2 border-t border-[#e2e8f0]">
+            <div className="relative rounded-[28px] p-5 overflow-hidden border bg-gradient-to-br from-purple-500/5 via-indigo-500/5 to-white border-purple-100 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+              <div className="relative flex flex-col gap-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#5c54eb] text-[18px]">
+                    {caseResult ? 'check_circle' : 'verified'}
+                  </span>
+                  <span className="text-[#5c54eb] font-bold text-xs uppercase tracking-wider">
+                    {caseResult ? 'Case Registered' : 'Token Generator'}
+                  </span>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  {caseResult
+                    ? 'Case successfully logged in DAC database.'
+                    : 'An immutable token ID will be issued upon form submission.'}
+                </p>
+                <div className="flex items-center justify-between bg-white border border-purple-100 rounded-2xl px-3.5 py-2.5 shadow-2xs">
+                  <span className="text-[#5c54eb] font-mono font-bold text-sm">
+                    {caseResult ? caseResult.token : 'DAC-2026-XXXX'}
+                  </span>
+                  {caseResult && (
                     <button
                       type="button"
-                      onClick={goPrev}
-                      disabled={isFirst}
-                      className="flex items-center gap-2 px-6 py-3 text-[#475569] text-base font-medium hover:text-[#0f172a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Copy token"
+                      onClick={() => navigator.clipboard.writeText(caseResult.token)}
+                      className="text-[#5c54eb] hover:text-indigo-800"
                     >
-                      <span className="material-symbols-outlined text-[14px]">arrow_back</span>
-                      Previous
+                      <span className="material-symbols-outlined text-[16px]">content_copy</span>
                     </button>
-
-                    {!isLast && (
-                      <button
-                        type="button"
-                        onClick={goNext}
-                        className="flex items-center gap-2 px-8 py-3 bg-[#5c56e9] text-white text-base font-medium rounded-lg shadow-[0_10px_15px_-3px_rgba(31,58,137,0.3)] hover:bg-[#4e49e4] transition-colors"
-                      >
-                        Next Step
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </button>
-                    )}
+                  )}
+                </div>
+                {caseResult && (
+                  <div className="grid grid-cols-3 gap-2 mt-1">
+                    {[
+                      { label: 'Offense Level', value: `Lvl ${caseResult.offenseLevel}` },
+                      { label: 'Sanction Fine', value: `₹${caseResult.fine?.toLocaleString()}` },
+                      { label: 'DAC Points', value: `+${caseResult.penaltyPoints}` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="bg-white border border-purple-100 rounded-xl p-2 text-center shadow-2xs">
+                        <p className="text-[#5c54eb] font-bold text-xs">{value}</p>
+                        <p className="text-slate-400 text-[9px] font-bold">{label}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
-
-            <div className="w-full lg:w-[280px] lg:flex-shrink-0 flex flex-col gap-4">
-              <div className="bg-white border border-[#e2e8f0] rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] p-4 flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#0f172a] text-[16px]">info</span>
-                  <h3 className="text-[#0f172a] font-bold text-sm leading-5">Filling Guidelines</h3>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {[
-                    'Ensure the Roll Number is exact to auto-fetch academic history.',
-                    'Press Enter after enrollment number to auto-fill student details.',
-                    'Select the most severe offense if multiple violations occurred.',
-                    'Attach clear evidence or signed witness statements.',
-                  ].map((tip, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="w-5 h-5 rounded-full bg-[#f1f5f9] flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <span className="text-[#64748b] text-[10px] font-bold">{i + 1}</span>
-                      </div>
-                      <p className="text-[#475569] text-xs leading-4">{tip}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="relative rounded-xl p-4 overflow-hidden border bg-[#ecfdf5] border-[#a7f3d0]">
-                <div className="absolute top-0 right-0 opacity-10 p-3">
-                  <span className="material-symbols-outlined text-[60px] text-emerald-600">token</span>
-                </div>
-                <div className="relative flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[#047857] text-[16px]">
-                      {caseResult ? 'check_circle' : 'verified'}
-                    </span>
-                    <span className="text-[#047857] font-bold text-[10px] tracking-[0.7px] uppercase">
-                      {caseResult ? 'Case Registered' : 'Token Generation'}
-                    </span>
-                  </div>
-                  <p className="text-[#065f46] text-xs leading-4">
-                    {caseResult
-                      ? 'Case created. Use this token to track.'
-                      : 'A unique tracking ID will be generated on submission.'}
-                  </p>
-                  <div className="flex items-center justify-between bg-white border border-[#d1fae5] rounded px-3 py-2 mt-1">
-                    <span className="text-[#047857] font-bold text-base" style={{ fontFamily: 'Liberation Mono, monospace' }}>
-                      {caseResult ? caseResult.token : 'DAC-2026-XXXX'}
-                    </span>
-                    {caseResult && (
-                      <button type="button" title="Copy token" onClick={() => navigator.clipboard.writeText(caseResult.token)}>
-                        <span className="material-symbols-outlined text-[#047857] text-[18px]">content_copy</span>
-                      </button>
-                    )}
-                  </div>
-                  {caseResult && (
-                    <div className="grid grid-cols-3 gap-1.5 mt-1">
-                      {[
-                        { label: 'Level', value: `Lvl ${caseResult.offenseLevel}` },
-                        { label: 'Fine', value: `Rs.${caseResult.fine?.toLocaleString()}` },
-                        { label: 'Points', value: `-${caseResult.penaltyPoints}` },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="bg-white border border-[#d1fae5] rounded p-1.5 text-center">
-                          <p className="text-[#047857] font-bold text-xs">{value}</p>
-                          <p className="text-[#065f46] text-[9px]">{label}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </DACLayout>
   );
 }

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import Sidebar from '../components/Sidebar';
+import DACLayout from '../components/layout/DACLayout';
 import StudentDetailsCard from '../components/StudentDetailsCard';
 import PreviousOffencesTable from '../components/PreviousOffencesTable';
 import IncidentDetailsCard from '../components/IncidentDetailsCard';
 import EvidenceCard from '../components/EvidenceCard';
 import TimelineCard from '../components/TimelineCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import SeverityBadge from '../components/ui/SeverityBadge';
 import { pageVariants, listVariants, itemVariants } from '../lib/motion';
 import { getCases, getUsers } from '../services/api';
 
@@ -34,51 +36,35 @@ function formatTime(value) {
 function buildTimeline(status) {
   const normalized = String(status || '').toLowerCase();
   return [
-    { title: 'Case Reported', date: null, state: 'completed', note: 'Case has been registered in the system.' },
+    { title: 'Case Reported', date: null, state: 'completed', note: 'Case registered in system with incident report.' },
     { title: 'Investigation Started', date: null, state: ['investigation', 'dac_review', 'resolved'].includes(normalized) ? 'completed' : 'upcoming', note: null },
-    { title: 'DAC Review', date: null, state: ['dac_review', 'resolved'].includes(normalized) ? 'completed' : 'upcoming', note: null },
-    { title: 'Decision Issued', date: null, state: normalized === 'resolved' ? 'completed' : 'upcoming', note: null },
-    { title: 'Resolved', date: null, state: normalized === 'resolved' ? 'completed' : 'upcoming', note: null },
+    { title: 'DAC Committee Review', date: null, state: ['dac_review', 'resolved'].includes(normalized) ? 'completed' : 'upcoming', note: null },
+    { title: 'Formal Decision Issued', date: null, state: normalized === 'resolved' ? 'completed' : 'upcoming', note: null },
+    { title: 'Case Closed & Resolved', date: null, state: normalized === 'resolved' ? 'completed' : 'upcoming', note: null },
   ];
 }
 
-// ─── Fallback for unknown tokens ───────────────────────────────────────────────
 function NotFound({ token, onBack }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-      <span className="material-symbols-outlined text-[60px] text-[#cbd5e1]">search_off</span>
-      <p className="text-[#0f172a] text-lg font-semibold">Case not found</p>
-      <p className="text-[#64748b] text-sm">No case with token <span className="font-mono font-semibold">#{token}</span> exists.</p>
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+        <span className="material-symbols-outlined text-[36px]">search_off</span>
+      </div>
+      <div>
+        <p className="text-[#0f172a] text-lg font-bold">Case Record Not Found</p>
+        <p className="text-[#64748b] text-sm mt-1">No case with token <span className="font-mono font-semibold text-[#5c56e9]">#{token}</span> exists in the database.</p>
+      </div>
       <button
         onClick={onBack}
-        className="mt-2 flex items-center gap-2 bg-[#4f46e5] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#162d6b] transition-colors shadow-sm"
+        className="mt-2 flex items-center gap-2 bg-[#5c56e9] hover:bg-[#4338ca] text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm"
       >
         <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-        Back to Dashboard
+        Return to Dashboard
       </button>
     </div>
   );
 }
 
-// ─── Status & severity badge helpers ─────────────────────────────────────────
-const statusDotMap = {
-  'Pending Review': 'bg-yellow-500',
-  Pending:          'bg-yellow-500',
-  'Investigation':  'bg-blue-500',
-  'DAC Review':     'bg-purple-500',
-  'Resolved':       'bg-green-500',
-  'Dismissed':      'bg-slate-400',
-  Warning:          'bg-amber-500',
-};
-
-const severityClassMap = {
-  Critical: 'bg-red-100 text-red-800',
-  High: 'bg-orange-100 text-orange-800',
-  Medium: 'bg-yellow-100 text-yellow-800',
-  Low: 'bg-slate-100 text-slate-700',
-};
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ManageCase() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -129,16 +115,15 @@ export default function ManageCase() {
           token: `#${matched.id}`,
           status,
           severity,
-          severityClass: severityClassMap[severity] ?? 'bg-slate-100 text-slate-700',
           student: {
-            name: student.name || 'Unknown Student',
-            enrollment: student.enrollment_no || `ID-${matched.student_id}`,
+            name: student.name || matched.student_name || 'Unknown Student',
+            enrollment: student.enrollment_no || matched.enrollment_no || `ID-${matched.student_id}`,
             year: student.year ? `${student.year} Year` : 'N/A',
-            department: student.program ? toTitleCase(student.program) : 'N/A',
+            department: student.program ? toTitleCase(student.program) : (matched.program ? toTitleCase(matched.program) : 'N/A'),
             email: student.email || 'N/A',
             contact: student.contact || 'N/A',
-            hostel: student.hostel || 'N/A',
-            room: student.room || 'N/A',
+            hostel: student.hostel || matched.hostel || 'N/A',
+            room: student.room || matched.room_no || 'N/A',
             penaltyPoints: student.total_points ?? matched.penalty_points ?? 0,
           },
           previousOffences,
@@ -173,154 +158,130 @@ export default function ManageCase() {
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-[#f9f9fb] font-sans antialiased">
-      <Sidebar />
-
-      <main className="pt-14 md:pt-0 md:pl-64 flex flex-col min-h-screen bg-[#f9f9fb]">
-
-        {/* ── Header ── */}
-        <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-20 px-4 md:px-6 py-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Back button */}
+    <DACLayout>
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Top Header Card */}
+        <div className="bg-white rounded-[28px] p-6 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/dashboard')}
-              className="flex items-center gap-1.5 text-[#64748b] hover:text-[#4f46e5] transition-colors text-sm font-medium"
+              className="h-10 w-10 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+              title="Return to Dashboard"
             >
-              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-              <span className="hidden sm:inline">Dashboard</span>
+              <span className="material-symbols-outlined text-[20px]">arrow_back</span>
             </button>
-
-            <span className="text-[#e2e8f0] text-lg hidden sm:block">/</span>
-
-            {/* Token */}
-            <span className="font-mono text-sm font-semibold text-[#64748b]">
-              {caseData ? caseData.token : `#${token}`}
-            </span>
-
-            {caseData && (
-              <>
-                <span className="text-[#e2e8f0] text-lg hidden sm:block">/</span>
-
-                {/* Student name */}
-                <h2 className="text-[#0f172a] text-base font-semibold tracking-tight">
-                  {caseData.student.name}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-black text-[#1e1b4b]">
+                  {caseData ? caseData.token : `#${token}`}
                 </h2>
-
-                {/* Status badge */}
-                <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
-                  <span className={`h-2 w-2 rounded-full ${statusDotMap[caseData.status] ?? 'bg-slate-400'}`} />
-                  <span className="text-sm text-[#0f172a]">{caseData.status}</span>
-                </div>
-
-                {/* Severity badge */}
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${caseData.severityClass}`}>
-                  {caseData.severity}
-                </span>
-              </>
-            )}
+                {caseData && (
+                  <>
+                    <StatusBadge status={caseData.status} />
+                    <SeverityBadge severity={caseData.severity} />
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                {caseData ? (
+                  <>
+                    Student: <span className="font-bold text-slate-700">{caseData.student.name}</span> ({caseData.student.enrollment}) · Incident: {caseData.incident.date}
+                  </>
+                ) : 'Loading inquiry details...'}
+              </p>
+            </div>
           </div>
-        </header>
+        </div>
 
-        {/* ── Page body ── */}
-        <div className="p-4 md:p-8 max-w-[1400px] mx-auto w-full">
+        {/* Page body */}
+        <div>
           {loading ? (
-            <p className="text-[#64748b] text-sm">Loading...</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <span className="material-symbols-outlined animate-spin text-[32px] text-[#5c54eb]">
+                progress_activity
+              </span>
+              <p className="text-xs font-semibold text-slate-400">Loading case records...</p>
+            </div>
           ) : error ? (
-            <p className="text-sm text-red-600">Error: {error}</p>
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+              Error: {error}
+            </div>
           ) : !caseData ? (
             <NotFound token={token} onBack={() => navigate('/dashboard')} />
           ) : (
-            <motion.div
-              variants={pageVariants}
-              initial="hidden"
-              animate="visible"
-              className="flex flex-col gap-6"
-            >
-              {/* ── Two-column layout ── */}
-              <motion.div
-                variants={listVariants}
-                initial="hidden"
-                animate="visible"
-                className="flex flex-col xl:flex-row gap-6 items-start"
-              >
-                {/* ── Left column ── */}
-                <div className="flex-1 min-w-0 flex flex-col gap-6">
-                  <motion.div variants={itemVariants}>
-                    <StudentDetailsCard student={caseData.student} />
-                  </motion.div>
-
-                  <motion.div variants={itemVariants}>
-                    <IncidentDetailsCard incident={caseData.incident} />
-                  </motion.div>
-
-                  <motion.div variants={itemVariants}>
-                    <EvidenceCard files={caseData.evidence} />
-                  </motion.div>
-
-                  <motion.div variants={itemVariants}>
-                    <PreviousOffencesTable offences={caseData.previousOffences} />
-                  </motion.div>
+            <div className="space-y-6">
+              {/* 2-Column Editorial Grid: Left (Incident & Evidence) vs Right (Student & Actions) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left column */}
+                <div className="lg:col-span-7 flex flex-col gap-6">
+                  <IncidentDetailsCard incident={caseData.incident} />
+                  <EvidenceCard files={caseData.evidence} />
+                  <PreviousOffencesTable offences={caseData.previousOffences} />
                 </div>
 
-                {/* ── Right column ── */}
-                <div className="w-full xl:w-[340px] xl:shrink-0 flex flex-col gap-6">
-                  <motion.div variants={itemVariants}>
-                    <TimelineCard events={caseData.timeline} />
-                  </motion.div>
+                {/* Right column */}
+                <div className="lg:col-span-5 flex flex-col gap-6">
+                  <StudentDetailsCard student={caseData.student} />
 
-                  {/* Quick actions card */}
-                  <motion.div variants={itemVariants}>
-                    <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                      <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">bolt</span>
-                        <h3 className="font-semibold text-[#0f172a] text-sm">Quick Actions</h3>
+                  {/* Actions card */}
+                  <div className="bg-white rounded-[28px] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="h-8 w-8 rounded-xl bg-purple-50 text-[#5c54eb] flex items-center justify-center font-bold">
+                        <span className="material-symbols-outlined text-[18px]">bolt</span>
                       </div>
-                      <div className="p-4 flex flex-col gap-2">
-                        {[
-                          { label: 'Mark as Resolved',      icon: 'check_circle',     cls: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'          },
-                          { label: 'Escalate to DAC',       icon: 'gavel',            cls: 'bg-[#4f46e5] hover:bg-[#162d6b] text-white shadow-sm'              },
-                          { label: 'Dismiss Case',          icon: 'cancel',           cls: 'border border-[#e2e8f0] text-red-500 hover:border-red-300 hover:bg-red-50 bg-white' },
-                        ].map(({ label, icon, cls }) => (
-                          <button
-                            key={label}
-                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${cls}`}
-                          >
-                            <span className="material-symbols-outlined text-[18px]">{icon}</span>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                      <h3 className="font-extrabold text-[#1e1b4b] text-sm">Administrative Actions</h3>
                     </div>
-                  </motion.div>
+                    <div className="flex flex-col gap-2.5">
+                      <button
+                        onClick={() => alert('Decision recorded.')}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-full text-xs font-bold bg-[#5c54eb] hover:bg-indigo-700 text-white shadow-md shadow-purple-500/20 transition-all active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                        <span>Approve Resolution</span>
+                      </button>
+                      <button
+                        onClick={() => alert('Escalated to DAC panel.')}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">gavel</span>
+                        <span>Refer to DAC Hearing</span>
+                      </button>
+                    </div>
+                  </div>
 
-                  {/* Penalty summary card */}
-                  <motion.div variants={itemVariants}>
-                    <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                      <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">payments</span>
-                        <h3 className="font-semibold text-[#0f172a] text-sm">Penalty Summary</h3>
+                  {/* Summary Card */}
+                  <div className="bg-white rounded-[28px] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="h-8 w-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                        <span className="material-symbols-outlined text-[18px]">payments</span>
                       </div>
-                      <div className="p-5 flex flex-col gap-3">
-                        {[
-                          { label: 'Offense Level',   value: 'Level 2 — Moderate' },
-                          { label: 'Severity Score',  value: '55 / 100' },
-                          { label: 'Fine',            value: '₹ 2,500' },
-                          { label: 'Penalty Points',  value: '25 pts' },
-                        ].map(({ label, value }) => (
-                          <div key={label} className="flex items-center justify-between">
-                            <span className="text-[#64748b] text-xs font-medium">{label}</span>
-                            <span className="text-[#0f172a] text-sm font-semibold">{value}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <h3 className="font-extrabold text-[#1e1b4b] text-sm">Disciplinary Assessment</h3>
                     </div>
-                  </motion.div>
+                    <div className="divide-y divide-slate-100">
+                      {[
+                        { label: 'Offense Category', value: caseData.incident.offenseType },
+                        { label: 'Severity Class', value: caseData.severity },
+                        { label: 'Assessed Fine', value: '₹ 2,500' },
+                        { label: 'Assessed Penalty', value: `${caseData.student.penaltyPoints} pts` },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="py-2.5 flex items-center justify-between">
+                          <span className="text-slate-500 text-xs font-medium">{label}</span>
+                          <span className="text-[#1e1b4b] text-xs font-extrabold">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </motion.div>
-            </motion.div>
+              </div>
+
+              {/* Bottom: Large Timeline Card */}
+              <div>
+                <TimelineCard events={caseData.timeline} />
+              </div>
+            </div>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </DACLayout>
   );
 }

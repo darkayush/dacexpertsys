@@ -2,6 +2,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import WardenSidebar from '../../components/WardenSidebar';
+import StudentDetailsCard from '../../components/StudentDetailsCard';
+import IncidentDetailsCard from '../../components/IncidentDetailsCard';
+import EvidenceCard from '../../components/EvidenceCard';
+import TimelineCard from '../../components/TimelineCard';
+import StatusBadge from '../../components/ui/StatusBadge';
+import SeverityBadge from '../../components/ui/SeverityBadge';
 import { pageVariants, listVariants, itemVariants } from '../../lib/motion';
 import { getCases, getUsers } from '../../services/api';
 
@@ -26,98 +32,30 @@ function formatTime(value) {
   return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-const DUMMY_CASES = {
-  'WRD-2024-003': {
-    token: 'WRD-2024-003',
-    status: 'Resolved (Warning)',
-    statusDot: 'bg-emerald-500',
-    severity: 'High',
-    severityClass: 'bg-orange-100 text-orange-700',
-
-    student: {
-      name: 'Amit Patel',
-      enrollment: '22EE032',
-      year: '2nd Year',
-      department: 'Electrical Engineering',
-      email: 'amit.patel@university.edu',
-      contact: '+91 98123 45678',
-      hostel: 'BSH',
-      room: 'B-315',
-    },
-
-    incident: {
-      token: 'WRD-2024-003',
-      date: '08 Apr 2026',
-      time: '02:15 PM',
-      location: 'Block B — Room B-315',
-      offenseType: 'Room Damage',
-      reportedBy: 'Warden, Block B',
-      description:
-        'Student caused significant damage to room furniture including broken chair and damaged desk. Incident occurred during an altercation with roommate. Estimated repair cost: ₹8,000. Student admitted fault and agreed to pay for damages.',
-    },
-
-    evidence: [
-      { name: 'Damage_Photos.jpg', size: '2.4 MB', uploadedAt: '08 Apr 2026' },
-      { name: 'Repair_Estimate.pdf', size: '890 KB', uploadedAt: '08 Apr 2026' },
-    ],
-
-    timeline: [
-      { title: 'Case Reported', date: '08 Apr 2026, 02:30 PM', badge: 'Reported', state: 'completed', note: 'Reported by Warden, Block B.' },
-      { title: 'Investigation Started', date: '08 Apr 2026, 03:00 PM', badge: 'In Progress', state: 'completed', note: 'Evidence collected and student interviewed.' },
-      { title: 'Warning Issued', date: '09 Apr 2026, 10:00 AM', badge: 'Completed', state: 'completed', note: 'Formal warning issued. Student agreed to pay damages.' },
-      { title: 'Case Resolved', date: '09 Apr 2026, 10:15 AM', badge: 'Resolved', state: 'completed', note: 'Case closed with warning. Payment plan established.' },
-    ],
-
-    finalStatus: {
-      action: 'Warning Issued',
-      date: '09 Apr 2026',
-      notes: 'Student received formal warning and agreed to pay ₹8,000 for room damages in 3 monthly installments. No further disciplinary action required at this time.',
-    },
-  },
-};
-
-const stateStyles = {
-  completed: {
-    dot: 'bg-[#4f46e5] border-[#4f46e5]',
-    icon: 'check',
-    iconColor: 'text-white',
-    line: 'bg-[#4f46e5]',
-    title: 'text-[#0f172a]',
-  },
-  active: {
-    dot: 'bg-white border-[#4f46e5] border-2',
-    icon: 'radio_button_checked',
-    iconColor: 'text-[#4f46e5]',
-    line: 'bg-[#e2e8f0]',
-    title: 'text-[#4f46e5] font-semibold',
-  },
-  upcoming: {
-    dot: 'bg-white border-[#e2e8f0]',
-    icon: null,
-    iconColor: '',
-    line: 'bg-[#e2e8f0]',
-    title: 'text-[#94a3b8]',
-  },
-};
-
 function NotFound({ token, onBack }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-      <span className="material-symbols-outlined text-[60px] text-[#cbd5e1]">search_off</span>
-      <p className="text-[#0f172a] text-lg font-semibold">Case not found</p>
-      <p className="text-[#64748b] text-sm">No case with token <span className="font-mono font-semibold">{token}</span> exists.</p>
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+        <span className="material-symbols-outlined text-[36px]">search_off</span>
+      </div>
+      <div>
+        <p className="text-[#0f172a] text-lg font-bold">Case Record Not Found</p>
+        <p className="text-[#64748b] text-sm mt-1">
+          No case with token <span className="font-mono font-semibold text-[#5c56e9]">#{token}</span> found.
+        </p>
+      </div>
       <button
         onClick={onBack}
-        className="mt-2 flex items-center gap-2 bg-[#4f46e5] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#162d6b] transition-colors shadow-sm"
+        className="mt-2 flex items-center gap-2 bg-[#5c56e9] hover:bg-[#4338ca] text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm"
       >
         <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-        Back to Dashboard
+        Return to My Cases
       </button>
     </div>
   );
 }
 
-export default function ViewCase() {
+export default function WardenViewCase() {
   const { id } = useParams();
   const navigate = useNavigate();
   const hasLoggedResponseRef = useRef(false);
@@ -134,6 +72,7 @@ export default function ViewCase() {
         setError('');
 
         const [casesResponse, usersResponse] = await Promise.all([getCases(), getUsers()]);
+
         if (!hasLoggedResponseRef.current) {
           console.log('Warden ViewCase API response:', { cases: casesResponse, users: usersResponse });
           hasLoggedResponseRef.current = true;
@@ -148,46 +87,40 @@ export default function ViewCase() {
         const usersById = Object.fromEntries(usersResponse.map((user) => [String(user.id), user]));
         const student = usersById[String(matched.student_id)] ?? {};
         const reporter = usersById[String(matched.reported_by)] ?? null;
-        const status = toTitleCase(matched.status);
-        const severity = toTitleCase(matched.severity);
+
+        const severity = toTitleCase(matched.severity) || 'Low';
+        const status = toTitleCase(matched.status) || 'Resolved';
 
         const mapped = {
-          token: String(matched.id),
-          status: status === 'Resolved' ? 'Resolved (Warning)' : status,
-          statusDot: status === 'Resolved' ? 'bg-emerald-500' : 'bg-blue-500',
-          severity: severity || 'Low',
-          severityClass: severity === 'Critical' ? 'bg-red-100 text-red-700' : severity === 'High' ? 'bg-orange-100 text-orange-700' : severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600',
+          token: `#${matched.id}`,
+          status,
+          severity,
           student: {
-            name: student.name || 'Unknown Student',
-            enrollment: student.enrollment_no || `ID-${matched.student_id}`,
+            name: student.name || matched.student_name || 'Unknown Student',
+            enrollment: student.enrollment_no || matched.enrollment_no || `ID-${matched.student_id}`,
             year: student.year ? `${student.year} Year` : 'N/A',
-            department: student.program ? toTitleCase(student.program) : 'N/A',
+            department: student.program ? toTitleCase(student.program) : (matched.program ? toTitleCase(matched.program) : 'N/A'),
             email: student.email || 'N/A',
             contact: student.contact || 'N/A',
-            hostel: student.hostel || 'N/A',
-            room: student.room || 'N/A',
+            hostel: student.hostel || matched.hostel || 'Hostel',
+            room: student.room || matched.room_no || 'N/A',
+            penaltyPoints: student.total_points ?? matched.penalty_points ?? 0,
           },
           incident: {
-            token: String(matched.id),
+            token: `#${matched.id}`,
             date: formatDate(matched.incident_date ?? matched.created_at),
             time: formatTime(matched.created_at),
-            location: matched.location || 'N/A',
+            location: matched.location || 'Hostel Premises',
             offenseType: toTitleCase(matched.offense_type) || 'N/A',
-            reportedBy: reporter?.name || 'Warden',
-            description: matched.description || 'No description available.',
+            reportedBy: reporter?.name || (matched.reported_by ? `User #${matched.reported_by}` : 'Hostel Warden'),
+            description: matched.description || 'No description recorded.',
           },
           evidence: [],
           timeline: [
-            { title: 'Case Reported', date: formatDate(matched.created_at), badge: 'Reported', state: 'completed', note: null },
-            { title: 'Investigation Started', date: formatDate(matched.created_at), badge: 'Completed', state: 'completed', note: null },
-            { title: 'Warning Issued', date: formatDate(matched.created_at), badge: 'Completed', state: 'completed', note: null },
-            { title: 'Case Resolved', date: formatDate(matched.created_at), badge: 'Resolved', state: 'completed', note: null },
+            { title: 'Case Reported', date: formatDate(matched.incident_date ?? matched.created_at), state: 'completed', note: 'Case registered by hostel administration.' },
+            { title: 'Inquiry & Review', date: formatDate(matched.created_at), state: 'completed', note: 'Statement obtained.' },
+            { title: 'Case Closed', date: formatDate(matched.created_at), state: 'completed', note: 'Action recorded and archived.' },
           ],
-          finalStatus: {
-            action: status === 'Resolved' ? 'Warning Issued' : status,
-            date: formatDate(matched.created_at),
-            notes: matched.description || 'Case closed.',
-          },
         };
 
         if (mounted) setLiveCaseData(mapped);
@@ -210,55 +143,55 @@ export default function ViewCase() {
   const caseData = liveCaseData;
 
   return (
-    <div className="min-h-screen bg-[#f9f9fb] font-sans antialiased">
+    <div className="min-h-screen bg-[#f5f7fc] font-sans antialiased text-[#1e293b]">
       <WardenSidebar />
 
-      <main className="pt-14 md:pt-0 md:pl-64 flex flex-col min-h-screen bg-[#f9f9fb]">
-        <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-20 px-4 md:px-6 py-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => navigate('/warden/cases')}
-              className="flex items-center gap-1.5 text-[#64748b] hover:text-[#4f46e5] transition-colors text-sm font-medium"
-            >
-              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-              <span className="hidden sm:inline">My Cases</span>
-            </button>
+      <main className="pt-16 md:pt-0 md:pl-20 xl:pl-64 flex flex-col min-h-screen transition-all">
+        {/* Top Header */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-[#edf2f7] sticky top-0 z-20 px-6 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-4 max-w-[1400px] mx-auto w-full">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => navigate('/warden/cases')}
+                className="flex items-center gap-1.5 text-[#64748b] hover:text-[#5c56e9] transition-colors text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#f8fafc] border border-[#edf2f7]"
+              >
+                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                My Cases
+              </button>
 
-            <span className="text-[#e2e8f0] text-lg hidden sm:block">/</span>
+              <span className="text-[#cbd5e1] font-mono">/</span>
 
-            <span className="font-mono text-sm font-semibold text-[#64748b]">
-              {caseData ? caseData.token : id}
-            </span>
+              <span className="font-mono text-xs font-bold text-[#5c56e9] bg-[#5c56e9]/10 px-2.5 py-1 rounded-lg">
+                {caseData ? caseData.token : id}
+              </span>
+
+              {caseData && (
+                <>
+                  <span className="text-[#cbd5e1] font-mono">/</span>
+                  <span className="text-[#0f172a] text-sm font-bold truncate max-w-[200px]">
+                    {caseData.student.name}
+                  </span>
+                </>
+              )}
+            </div>
 
             {caseData && (
-              <>
-                <span className="text-[#e2e8f0] text-lg hidden sm:block">/</span>
-
-                <h2 className="text-[#0f172a] text-base font-semibold tracking-tight">
-                  {caseData.student.name}
-                </h2>
-
-                <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
-                  <span className={`h-2 w-2 rounded-full ${caseData.statusDot}`} />
-                  <span className="text-sm text-[#0f172a]">{caseData.status}</span>
-                </div>
-
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${caseData.severityClass}`}>
-                  {caseData.severity}
-                </span>
-              </>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={caseData.status} />
+                <SeverityBadge severity={caseData.severity} />
+              </div>
             )}
           </div>
         </header>
 
-        <div className="p-4 md:p-8 max-w-[1400px] mx-auto w-full">
+        {/* Page body */}
+        <div className="p-6 md:p-8 max-w-[1400px] mx-auto w-full flex-1">
           {loading && !caseData ? (
-            <p className="text-[#64748b] text-sm mb-4">Loading...</p>
-          ) : null}
-          {!loading && error ? (
-            <p className="text-sm text-red-600 mb-4">Error: {error}</p>
-          ) : null}
-          {!caseData ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-10 h-10 border-3 border-[#5c56e9] border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-medium text-[#64748b]">Loading case records...</p>
+            </div>
+          ) : !caseData ? (
             <NotFound token={id} onBack={() => navigate('/warden/cases')} />
           ) : (
             <motion.div
@@ -274,187 +207,47 @@ export default function ViewCase() {
                 className="flex flex-col xl:flex-row gap-6 items-start"
               >
                 {/* Left column */}
-                <div className="flex-1 min-w-0 flex flex-col gap-6">
-                  {/* Case Header */}
-                  <motion.div variants={itemVariants} className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[24px]">check_circle</span>
-                      </div>
-                      <div>
-                        <p className="text-emerald-100 text-xs font-medium uppercase tracking-wide">Case Status</p>
-                        <h3 className="text-xl font-bold">{caseData.status}</h3>
-                      </div>
-                    </div>
-                    <p className="text-emerald-50 text-sm">This case has been resolved and closed.</p>
+                <div className="flex-1 min-w-0 w-full flex flex-col gap-6">
+                  <motion.div variants={itemVariants}>
+                    <StudentDetailsCard student={caseData.student} />
                   </motion.div>
 
-                  {/* Student Details */}
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">person</span>
-                      <h3 className="font-semibold text-[#0f172a] text-sm">Student Details</h3>
-                    </div>
-                    <div className="p-6">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-sm font-bold shrink-0">
-                          {caseData.student.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-[#0f172a] font-semibold text-base leading-tight">{caseData.student.name}</p>
-                          <p className="text-[#64748b] text-xs mt-0.5">{caseData.student.enrollment}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-                        {[
-                          { label: 'Year', value: caseData.student.year },
-                          { label: 'Department', value: caseData.student.department },
-                          { label: 'Email', value: caseData.student.email },
-                          { label: 'Contact', value: caseData.student.contact },
-                          { label: 'Hostel', value: caseData.student.hostel },
-                          { label: 'Room No.', value: caseData.student.room },
-                        ].map(({ label, value }) => (
-                          <div key={label}>
-                            <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-0.5">{label}</p>
-                            <p className="text-[#0f172a] text-sm font-medium">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  <motion.div variants={itemVariants}>
+                    <IncidentDetailsCard incident={caseData.incident} />
                   </motion.div>
 
-                  {/* Incident Details */}
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">report</span>
-                      <h3 className="font-semibold text-[#0f172a] text-sm">Incident Details</h3>
-                    </div>
-                    <div className="p-6 flex flex-col gap-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
-                        {[
-                          { label: 'Token ID', value: caseData.incident.token, icon: 'tag' },
-                          { label: 'Date', value: caseData.incident.date, icon: 'calendar_today' },
-                          { label: 'Time', value: caseData.incident.time, icon: 'schedule' },
-                          { label: 'Location', value: caseData.incident.location, icon: 'location_on' },
-                          { label: 'Offense Type', value: caseData.incident.offenseType, icon: 'gavel' },
-                          { label: 'Reported By', value: caseData.incident.reportedBy, icon: 'person_pin' },
-                        ].map(({ label, value, icon }) => (
-                          <div key={label} className="flex items-start gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-[#eef2fb] flex items-center justify-center shrink-0 mt-0.5">
-                              <span className="material-symbols-outlined text-[#4f46e5] text-[16px]">{icon}</span>
-                            </div>
-                            <div>
-                              <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-0.5">{label}</p>
-                              <p className="text-[#0f172a] text-sm font-medium">{value}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-2">Description</p>
-                        <p className="text-[#334155] text-sm leading-6 bg-slate-50 rounded-lg border border-[#e2e8f0] px-4 py-3">
-                          {caseData.incident.description}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Evidence */}
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">attach_file</span>
-                      <h3 className="font-semibold text-[#0f172a] text-sm">Evidence</h3>
-                    </div>
-                    <div className="p-6">
-                      <div className="flex flex-col gap-3">
-                        {caseData.evidence.map((file, i) => (
-                          <div key={i} className="flex items-center justify-between p-4 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-                                <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">description</span>
-                              </div>
-                              <div>
-                                <p className="text-[#0f172a] text-sm font-medium">{file.name}</p>
-                                <p className="text-[#94a3b8] text-xs">{file.size} • Uploaded {file.uploadedAt}</p>
-                              </div>
-                            </div>
-                            <button className="text-[#4f46e5] hover:text-[#4338ca] transition-colors">
-                              <span className="material-symbols-outlined text-[18px]">download</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  <motion.div variants={itemVariants}>
+                    <EvidenceCard files={caseData.evidence} />
                   </motion.div>
                 </div>
 
                 {/* Right column */}
-                <div className="w-full xl:w-[340px] xl:shrink-0 flex flex-col gap-6">
-                  {/* Timeline */}
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">timeline</span>
-                      <h3 className="font-semibold text-[#0f172a] text-sm">Case Timeline</h3>
-                    </div>
-                    <div className="p-6">
-                      <ol className="relative">
-                        {caseData.timeline.map((event, i) => {
-                          const style = stateStyles[event.state] ?? stateStyles.upcoming;
-                          const isLast = i === caseData.timeline.length - 1;
-
-                          return (
-                            <li key={i} className="flex gap-4">
-                              <div className="flex flex-col items-center">
-                                <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 z-10 ${style.dot}`}>
-                                  {style.icon && (
-                                    <span className={`material-symbols-outlined text-[15px] ${style.iconColor}`}>
-                                      {style.icon}
-                                    </span>
-                                  )}
-                                </div>
-                                {!isLast && (
-                                  <div className={`w-0.5 flex-1 min-h-[24px] mt-1 mb-1 rounded-full ${style.line}`} />
-                                )}
-                              </div>
-
-                              <div className={`pb-6 flex-1 min-w-0 ${isLast ? 'pb-0' : ''}`}>
-                                <div className="flex items-center gap-2 flex-wrap mb-1">
-                                  <p className={`text-sm leading-tight ${style.title}`}>{event.title}</p>
-                                </div>
-                                {event.date && (
-                                  <p className="text-[#94a3b8] text-xs">{event.date}</p>
-                                )}
-                                {event.note && (
-                                  <p className="text-[#64748b] text-xs mt-1 leading-5">{event.note}</p>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    </div>
+                <div className="w-full xl:w-[360px] xl:shrink-0 flex flex-col gap-6">
+                  <motion.div variants={itemVariants}>
+                    <TimelineCard events={caseData.timeline} />
                   </motion.div>
 
-                  {/* Final Status */}
-                  <motion.div variants={itemVariants} className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">assignment_turned_in</span>
-                      <h3 className="font-semibold text-[#0f172a] text-sm">Final Status</h3>
-                    </div>
-                    <div className="p-6 flex flex-col gap-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide">Action Taken</span>
-                        <span className="text-[#0f172a] text-sm font-semibold">{caseData.finalStatus.action}</span>
+                  <motion.div variants={itemVariants}>
+                    <div className="bg-white rounded-2xl border border-[#edf2f7] shadow-sm overflow-hidden p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="h-8 w-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                        </div>
+                        <h3 className="font-bold text-[#0f172a] text-sm">Warden Record Summary</h3>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide">Date</span>
-                        <span className="text-[#0f172a] text-sm font-semibold">{caseData.finalStatus.date}</span>
-                      </div>
-                      <div>
-                        <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-2">Notes</p>
-                        <p className="text-[#334155] text-sm leading-6 bg-slate-50 rounded-lg border border-[#e2e8f0] px-4 py-3">
-                          {caseData.finalStatus.notes}
-                        </p>
+                      <div className="divide-y divide-[#edf2f7]">
+                        <div className="py-2.5 flex items-center justify-between">
+                          <span className="text-[#64748b] text-xs font-medium">Status</span>
+                          <span className="text-[#0f172a] text-xs font-bold">{caseData.status}</span>
+                        </div>
+                        <div className="py-2.5 flex items-center justify-between">
+                          <span className="text-[#64748b] text-xs font-medium">Offense Type</span>
+                          <span className="text-[#0f172a] text-xs font-bold">{caseData.incident.offenseType}</span>
+                        </div>
+                        <div className="py-2.5 flex items-center justify-between">
+                          <span className="text-[#64748b] text-xs font-medium">DAC Standing</span>
+                          <span className="text-[#0f172a] text-xs font-bold">{caseData.student.penaltyPoints} pts</span>
+                        </div>
                       </div>
                     </div>
                   </motion.div>

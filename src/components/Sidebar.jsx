@@ -1,39 +1,33 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-const adminSubItems = [
-  { to: '/admin-settings/rules-weights', label: 'Rules & Weights', icon: 'balance' },
-  { to: '/admin-settings/users',         label: 'User Management', icon: 'manage_accounts' },
-  { to: '/admin-settings/system',        label: 'System Config',   icon: 'tune' },
-];
-
-const mainNavItems = [
-  { to: '/dashboard',     label: 'Dashboard',      icon: 'dashboard' },
-  { to: '/reports',       label: 'Reports',        icon: 'bar_chart' },
-  { to: '/settings',      label: 'Settings',       icon: 'settings' },
-];
-
-// ── Shared nav content ────────────────────────────────────────────────────────
-function SidebarContent({ onClose }) {
-  const navigate  = useNavigate();
-  const location  = useLocation();
+function SidebarInner({ collapsed, setCollapsed, onClose }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, role, logout } = useAuth();
 
-  const resolvedMainNavItems = mainNavItems.map((item) => {
-    if (item.to === '/dashboard' && role === 'dsw') {
-      return { ...item, to: '/dsw-dashboard' };
-    }
-    return item;
-  });
+  const isDsw = role === 'dsw';
+  const isAdmin = role === 'admin';
 
-  const isAdminActive = location.pathname.startsWith('/admin-settings');
-  const [adminOpen, setAdminOpen] = useState(isAdminActive);
+  const mainNavItems = [
+    {
+      to: isDsw ? '/dsw-dashboard' : '/dashboard',
+      label: 'Dashboard',
+      icon: 'grid_view',
+    },
+    { to: '/reports', label: 'Reports & Analytics', icon: 'analytics' },
+  ];
 
-  const displayName = currentUser?.displayName || currentUser?.email || 'User';
-  const photoURL    = currentUser?.photoURL || null;
-  const email       = currentUser?.email || '';
-  const initials    = displayName
+  const adminItems = [
+    { to: '/admin-settings/users', label: 'User Management', icon: 'manage_accounts' },
+    { to: '/admin-settings/rules-weights', label: 'Rules & Weights', icon: 'balance' },
+    { to: '/admin-settings/system', label: 'System Config', icon: 'tune' },
+  ];
+
+  const displayName = currentUser?.displayName || currentUser?.name || currentUser?.email || (isDsw ? 'DSW' : 'Admin');
+  const initials = displayName
     .split(' ')
     .map((w) => w[0])
     .join('')
@@ -47,210 +41,248 @@ function SidebarContent({ onClose }) {
 
   useEffect(() => {
     if (onClose) onClose();
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white select-none">
+      {/* ── Brand / Header ── */}
+      <div className={`p-5 flex items-center ${collapsed ? 'justify-center' : 'justify-between'} border-b border-[#edf2f7]`}>
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 shrink-0">
+            <span className="material-symbols-outlined text-[22px]">gavel</span>
+          </div>
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex flex-col overflow-hidden"
+            >
+              <h1 className="text-sm font-extrabold text-[#0f172a] leading-tight tracking-tight truncate">
+                DAC System
+              </h1>
+              <span className="text-[10px] font-bold text-sky-600 uppercase tracking-wider">
+                {isDsw ? 'DSW Portal' : 'Admin Portal'}
+              </span>
+            </motion.div>
+          )}
+        </div>
 
-      {/* ── Logo ── */}
-      <div className="px-6 pt-7 pb-6 flex items-center gap-3">
-        <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0">
-          <img src="/favicon.png" alt="DAC Logo" className="w-10 h-10 object-contain"  />
-        </div>
-        <div className="flex-1">
-          <h1 className="text-[#0f172a] font-extrabold text-base leading-tight tracking-tight">DAC System</h1>
-        </div>
+        {/* Desktop Collapse Toggle */}
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="hidden md:flex h-7 w-7 rounded-xl hover:bg-slate-100 text-[#94a3b8] hover:text-[#0f172a] items-center justify-center transition-colors"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {collapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
+
+        {/* Mobile Close Button */}
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
-            className="md:hidden text-[#94a3b8] hover:text-[#0f172a] transition-colors"
-            aria-label="Close menu"
+            className="md:hidden text-[#94a3b8] hover:text-[#0f172a] p-1"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         )}
       </div>
 
-      {/* ── Nav ── */}
-      <nav className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-0.5">
-
-        {resolvedMainNavItems.map(({ to, label, icon }) => (
+      {/* ── Nav Items ── */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1.5">
+        {mainNavItems.map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
+            title={collapsed ? label : undefined}
             className={({ isActive }) =>
-              `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+              `group relative flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${
                 isActive
-                  ? 'bg-[#4f46e5] text-white shadow-md shadow-indigo-200/60'
+                  ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/25'
                   : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
-              }`
+              } ${collapsed ? 'justify-center px-2' : ''}`
             }
           >
             {({ isActive }) => (
               <>
                 <span
-                  className={`material-symbols-outlined text-[20px] transition-colors ${
-                    isActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-[#4f46e5]'
+                  className={`material-symbols-outlined text-[22px] transition-colors ${
+                    isActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-sky-500'
                   }`}
                 >
                   {icon}
                 </span>
-                <span>{label}</span>
+                {!collapsed && <span className="truncate">{label}</span>}
               </>
             )}
           </NavLink>
         ))}
 
-        {/* Divider */}
-        <div className="my-3 border-t border-[#f1f5f9]" />
-
-        {/* Admin Settings collapsible */}
-        <div>
-          <button
-            onClick={() => setAdminOpen((v) => !v)}
-            className={`w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-              isAdminActive
-                ? 'bg-[#4f46e5] text-white shadow-md shadow-indigo-200/60'
-                : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
-            }`}
-          >
-            <span
-              className={`material-symbols-outlined text-[20px] transition-colors ${
-                isAdminActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-[#4f46e5]'
-              }`}
-            >
-              settings
-            </span>
-            <span className="flex-1 text-left">Admin Settings</span>
-            <span
-              className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${
-                adminOpen ? 'rotate-180' : ''
-              } ${isAdminActive ? 'text-white/70' : 'text-[#c8d0e0]'}`}
-            >
-              expand_more
-            </span>
-          </button>
-          {/* Sub-items */}
-          <div
-            className={`overflow-hidden transition-all duration-200 ${
-              adminOpen ? 'max-h-48 opacity-100 mt-1' : 'max-h-0 opacity-0'
-            }`}
-          >
-            <div className="ml-4 pl-3 border-l-2 border-[#e2e8f0] flex flex-col gap-0.5 py-1">
-              {adminSubItems.map(({ to, label, icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${
-                      isActive
-                        ? 'bg-indigo-50 text-[#4f46e5] font-semibold'
-                        : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        className={`material-symbols-outlined text-[16px] ${
-                          isActive ? 'text-[#4f46e5]' : 'text-[#c8d0e0]'
-                        }`}
-                      >
-                        {icon}
-                      </span>
-                      {label}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+        {/* Admin Specific Links */}
+        {isAdmin && (
+          <>
+            <div className="pt-3 pb-1">
+              {!collapsed && (
+                <p className="px-3 text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">
+                  Administration
+                </p>
+              )}
             </div>
-          </div>
-        </div>
+            {adminItems.map(({ to, label, icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                title={collapsed ? label : undefined}
+                className={({ isActive }) =>
+                  `group relative flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${
+                    isActive
+                      ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/25'
+                      : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
+                  } ${collapsed ? 'justify-center px-2' : ''}`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <span
+                      className={`material-symbols-outlined text-[22px] transition-colors ${
+                        isActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-sky-500'
+                      }`}
+                    >
+                      {icon}
+                    </span>
+                    {!collapsed && <span className="truncate">{label}</span>}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </>
+        )}
 
-        
+        <div className="pt-2">
+          <NavLink
+            to="/settings"
+            title={collapsed ? 'Settings' : undefined}
+            className={({ isActive }) =>
+              `group relative flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${
+                isActive
+                  ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/25'
+                  : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
+              } ${collapsed ? 'justify-center px-2' : ''}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span
+                  className={`material-symbols-outlined text-[22px] transition-colors ${
+                    isActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-sky-500'
+                  }`}
+                >
+                  settings
+                </span>
+                {!collapsed && <span className="truncate">Settings</span>}
+              </>
+            )}
+          </NavLink>
+        </div>
       </nav>
 
-      {/* ── User Card ── */}
-      <div className="mx-4 mb-4 p-3 bg-[#f8fafc] rounded-2xl border border-[#e2e8f0] flex items-center gap-3">
-        {photoURL ? (
-          <img
-            src={photoURL}
-            alt={displayName}
-            referrerPolicy="no-referrer"
-            className="h-9 w-9 rounded-xl object-cover shrink-0 shadow-sm"
-          />
-        ) : (
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-[#4f46e5] to-[#818cf8] flex items-center justify-center shrink-0 shadow-sm">
-            <span className="text-white text-xs font-bold">{initials}</span>
-          </div>
-        )}
-        <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-          <p className="text-[#0f172a] text-xs font-semibold truncate">{displayName}</p>
-          <p className="text-[#94a3b8] text-[10px] truncate">{email}</p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#64748b] hover:bg-red-50 hover:text-red-500 transition-all duration-150 mt-2"
+      {/* ── Bottom User Chip ── */}
+      <div className="p-3 border-t border-[#edf2f7] bg-[#fcfdfe]">
+        <div
+          className={`flex items-center gap-3 p-2 rounded-2xl hover:bg-slate-100/80 transition-colors ${
+            collapsed ? 'justify-center p-1' : ''
+          }`}
         >
-          <span className="material-symbols-outlined text-[20px] text-[#94a3b8] group-hover:text-red-400 transition-colors">
-            logout
-          </span>
-        </button>
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-sky-400 to-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-xs shrink-0">
+            {initials}
+          </div>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-[#0f172a] truncate">{displayName}</p>
+              <p className="text-[10px] text-[#94a3b8] truncate uppercase">{role || 'Admin'}</p>
+            </div>
+          )}
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Logout"
+              className="p-1.5 rounded-xl hover:bg-rose-50 text-[#94a3b8] hover:text-rose-600 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">logout</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Main Sidebar ──────────────────────────────────────────────────────────────
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [mobileOpen]);
 
   return (
     <>
-      {/* ── Mobile top bar ── */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-[#e2e8f0] flex items-center gap-3 px-4 h-14">
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="text-[#64748b] hover:text-[#4f46e5] transition-colors"
-          aria-label="Open menu"
-        >
-          <span className="material-symbols-outlined text-[24px]">menu</span>
-        </button>
+      {/* Mobile Top Bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white/90 backdrop-blur-md border-b border-[#edf2f7] z-30 px-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div>
-            <img src="/favicon.png" alt="DAC Logo" className="w-10 h-10 object-contain" />
-          </div>
-          <span className="text-[#0f172a] font-extrabold text-sm tracking-tight">DAC System</span>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="p-2 rounded-xl hover:bg-slate-100 text-[#0f172a]"
+          >
+            <span className="material-symbols-outlined text-[22px]">menu</span>
+          </button>
+          <span className="text-sm font-extrabold text-[#0f172a]">DAC System</span>
         </div>
-      </header>
+        <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold shadow-xs">
+          A
+        </div>
+      </div>
 
-      {/* ── Desktop sidebar ── */}
-      <aside className="hidden md:flex fixed top-0 left-0 w-64 h-screen flex-col z-30 border-r border-[#e8eaf0] bg-white">
-        <SidebarContent />
-      </aside>
-
-      {/* ── Mobile backdrop ── */}
-      {mobileOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* ── Mobile drawer ── */}
+      {/* Desktop Fixed Sidebar */}
       <aside
-        className={`md:hidden fixed top-0 left-0 h-screen w-72 bg-white border-r border-[#e2e8f0] z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`hidden md:flex flex-col fixed top-0 left-0 h-screen border-r border-[#edf2f7] z-30 transition-all duration-300 ease-in-out ${
+          collapsed ? 'w-20' : 'w-64'
         }`}
       >
-        <SidebarContent onClose={() => setMobileOpen(false)} />
+        <SidebarInner
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+        />
       </aside>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)}
+              className="md:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40"
+            />
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="md:hidden fixed top-0 left-0 bottom-0 w-64 bg-white z-50 shadow-2xl"
+            >
+              <SidebarInner
+                collapsed={false}
+                setCollapsed={() => {}}
+                onClose={() => setMobileOpen(false)}
+              />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </>
   );
 }

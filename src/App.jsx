@@ -33,6 +33,7 @@ import ChiefWardenNotifications from './pages/chiefwarden/Notifications.jsx';
 import ChiefWardenProfile from './pages/chiefwarden/Profile.jsx';
 import DswDashboard from './pages/dsw/DswDashboard.jsx';
 import Settings from './pages/Settings.jsx';
+import DacChatbot from './components/DacChatbot.jsx';
 
 function ProtectedRoute({ children, roles }) {
   const { currentUser, loading, isAuthenticated, role } = useAuth();
@@ -121,6 +122,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AnimatedRoutes />
+      <DacChatbot />
     </BrowserRouter>
   );
 }

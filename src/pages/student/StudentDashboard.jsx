@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import StudentSummaryCards from '../../components/student/StudentSummaryCards';
-import StudentCasesTable from '../../components/student/StudentCasesTable';
-import PastRecordsTable from '../../components/PastRecordsTable';
-import { getCaseHistory, getCases } from '../../services/api';
-
-const PENALTY_THRESHOLDS = {
-  warning: 25,
-  placementBan: 50,
-  expulsion: 75,
-};
+import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import GreetingCard from '../../components/ui/GreetingCard';
+import StudentCard from '../../components/ui/StudentCard';
+import StatusBadge from '../../components/ui/StatusBadge';
+import SeverityBadge from '../../components/ui/SeverityBadge';
+import PromoAssistantCard from '../../components/ui/PromoAssistantCard';
+import EmptyState from '../../components/ui/EmptyState';
+import { getCases } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 function toTitleCase(value = '') {
   return String(value)
@@ -27,6 +26,7 @@ function formatDate(value) {
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const hasLoggedResponseRef = useRef(false);
   const [cases, setCases] = useState([]);
   const [summary, setSummary] = useState({
@@ -35,12 +35,8 @@ export default function StudentDashboard() {
     resolvedCases: 0,
     totalPenaltyPoints: 0,
   });
-  const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [historyRecords, setHistoryRecords] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyError, setHistoryError] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -56,61 +52,39 @@ export default function StudentDashboard() {
           hasLoggedResponseRef.current = true;
         }
 
-        const mappedCases = casesResponse.map((entry) => {
-          const status = toTitleCase(entry.status);
-          const severity = toTitleCase(entry.severity);
-          return {
-            token: String(entry.id),
-            offenseType: toTitleCase(entry.offense_type) || 'N/A',
-            severity,
-            severityClass: severity === 'Critical' ? 'bg-red-100 text-red-700' : severity === 'High' ? 'bg-orange-100 text-orange-700' : severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600',
-            status,
-            statusDot: status === 'Resolved' ? 'bg-emerald-500' : status === 'Dac Review' ? 'bg-purple-500' : status === 'Investigation' ? 'bg-blue-500' : 'bg-yellow-500',
-            dateReported: formatDate(entry.incident_date ?? entry.created_at),
-          };
-        });
+        const mappedCases = casesResponse.map((entry) => ({
+          id: entry.id,
+          token: entry.external_case_id || `#${entry.id}`,
+          offenseType: toTitleCase(entry.offense_type) || 'N/A',
+          severity: toTitleCase(entry.severity) || 'Low',
+          status: toTitleCase(entry.status) || 'Pending',
+          penaltyPoints: entry.penalty_points || 0,
+          dateReported: formatDate(entry.incident_date ?? entry.created_at),
+        }));
 
         const totalCases = casesResponse.length;
-        const activeCases = casesResponse.filter((entry) => String(entry.status || '').toLowerCase() !== 'resolved').length;
-        const resolvedCases = casesResponse.filter((entry) => String(entry.status || '').toLowerCase() === 'resolved').length;
-        const totalPenaltyPoints = casesResponse.reduce((sum, entry) => sum + Number(entry.penalty_points || 0), 0);
-
-        const activity = mappedCases
-          .slice(0, 5)
-          .map((entry) => `Case #${entry.token}: ${entry.offenseType} (${entry.status})`);
+        const activeCases = casesResponse.filter((entry) =>
+          ['pending_chief', 'pending_dsw', 'pending_admin', 'investigation', 'pending'].includes(
+            String(entry.status || '').toLowerCase()
+          )
+        ).length;
+        const resolvedCases = casesResponse.filter(
+          (entry) => String(entry.status || '').toLowerCase() === 'resolved'
+        ).length;
+        const totalPenaltyPoints = casesResponse.reduce(
+          (sum, entry) => sum + Number(entry.penalty_points || 0),
+          0
+        );
 
         if (mounted) {
           setCases(mappedCases);
           setSummary({ totalCases, activeCases, resolvedCases, totalPenaltyPoints });
-          setRecentActivity(activity);
-        }
-
-        setHistoryLoading(true);
-        setHistoryError('');
-        try {
-          const historyResponse = await getCaseHistory(6);
-          const mappedHistory = historyResponse.map((entry) => ({
-            id: entry.id,
-            token: `#${entry.id}`,
-            studentName: entry.student_name || 'You',
-            offense: toTitleCase(entry.offense_type) || 'N/A',
-            status: toTitleCase(entry.status) || 'N/A',
-            date: formatDate(entry.incident_date ?? entry.created_at),
-          }));
-          if (mounted) setHistoryRecords(mappedHistory);
-        } catch (historyLoadError) {
-          if (mounted) setHistoryError(historyLoadError?.message || 'Failed to fetch history.');
-        } finally {
-          if (mounted) setHistoryLoading(false);
         }
       } catch (loadError) {
         if (mounted) {
-          setError(loadError?.message || 'Failed to fetch student data.');
+          setError(loadError?.message || 'Failed to fetch student records.');
           setCases([]);
-          setRecentActivity([]);
           setSummary({ totalCases: 0, activeCases: 0, resolvedCases: 0, totalPenaltyPoints: 0 });
-          setHistoryRecords([]);
-          setHistoryLoading(false);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -124,79 +98,128 @@ export default function StudentDashboard() {
   }, []);
 
   return (
-    <div className="space-y-6 md:space-y-8">
-      <section className="space-y-4">
-        <h3 className="text-lg font-bold text-[#0f172a]">Summary</h3>
-        {loading && <p className="text-[#64748b] text-sm">Loading...</p>}
-        {!!error && <p className="text-sm text-red-600">Error: {error}</p>}
-        <StudentSummaryCards summary={summary} />
-      </section>
+    <div className="space-y-6 sm:space-y-8 select-none">
+      
+      {/* ── ROW 1: Greeting & Profile Summary ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        <div className="lg:col-span-5 flex flex-col justify-center">
+          <GreetingCard
+            role="Student"
+            name={currentUser?.name}
+            subtitle="Transparent access to your institutional disciplinary status, inquiry records, and committee policies."
+            activeCount={summary.activeCases}
+            totalCount={summary.totalCases}
+          />
+        </div>
 
-      <section className="space-y-4">
-        <h3 className="text-lg font-bold text-[#0f172a]">My Cases</h3>
-        <StudentCasesTable
-          cases={cases}
-          onViewCase={(token) => navigate(`/student/cases/${token}`)}
-        />
-      </section>
+        {/* Student Profile Card */}
+        <div className="lg:col-span-7">
+          <StudentCard
+            student={currentUser}
+            previousPoints={summary.totalPenaltyPoints}
+            caseCount={summary.totalCases}
+          />
+        </div>
+      </div>
 
-      <section className="space-y-4">
-        <PastRecordsTable
-          records={historyRecords}
-          loading={historyLoading}
-          error={historyError}
-          onViewAll={() => navigate('/student/cases')}
-        />
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-lg font-bold text-[#0f172a]">Penalty Points Summary</h3>
-        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">policy</span>
-            <h3 className="font-semibold text-[#0f172a] text-sm">Threshold Details</h3>
+      {/* ── Fair Hearing Guidance Banner ── */}
+      <div className="p-5 rounded-[26px] bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border border-purple-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-2xl bg-[#5c54eb] text-white flex items-center justify-center shrink-0 shadow-xs">
+            <span className="material-symbols-outlined text-[20px]">balance</span>
           </div>
-
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-50 rounded-lg border border-[#e2e8f0] p-4">
-              <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-1">Total Penalty Points</p>
-              <p className="text-[#0f172a] text-2xl font-bold leading-none">{summary.totalPenaltyPoints}</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg border border-[#e2e8f0] p-4">
-              <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-1">Warning Threshold</p>
-              <p className="text-[#0f172a] text-2xl font-bold leading-none">{PENALTY_THRESHOLDS.warning}</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg border border-[#e2e8f0] p-4">
-              <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-1">Placement Ban Threshold</p>
-              <p className="text-[#0f172a] text-2xl font-bold leading-none">{PENALTY_THRESHOLDS.placementBan}</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg border border-[#e2e8f0] p-4">
-              <p className="text-[#94a3b8] text-xs font-medium uppercase tracking-wide mb-1">Expulsion Threshold</p>
-              <p className="text-[#0f172a] text-2xl font-bold leading-none">{PENALTY_THRESHOLDS.expulsion}</p>
-            </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-extrabold text-[#1e1b4b]">
+              Student Rights &amp; Fair Hearing Guarantee
+            </h4>
+            <p className="text-xs text-slate-500 font-medium">
+              Every student is entitled to present evidence and appeal committee decisions under University DAC Code.
+            </p>
           </div>
         </div>
-      </section>
 
-      <section className="space-y-4">
-        <h3 className="text-lg font-bold text-[#0f172a]">Recent Activity</h3>
-        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#4f46e5] text-[18px]">history</span>
-            <h3 className="font-semibold text-[#0f172a] text-sm">Case Updates</h3>
-          </div>
-          <div className="p-6">
-            <ul className="flex flex-col gap-3">
-              {recentActivity.map((item) => (
-                <li key={item} className="flex items-start gap-3 text-sm text-[#334155]">
-                  <span className="h-1.5 w-1.5 mt-2 rounded-full bg-[#4f46e5] shrink-0" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+        <Link
+          to="/student/disciplinary-policy"
+          className="px-4 py-2 rounded-full bg-white hover:bg-slate-50 text-[#5c54eb] text-xs font-bold border border-purple-200 transition-colors shrink-0 shadow-xs"
+        >
+          View Full Policy &rarr;
+        </Link>
+      </div>
+
+      {/* ── ROW 2: Case Records & Assistant ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        {/* Cases Table / Card */}
+        <div className="lg:col-span-8 bg-white rounded-[28px] p-6 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-[#1e1b4b]">
+                  My Disciplinary Inquiries
+                </h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">
+                  Chronological record of reported campus incidents
+                </p>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+                {cases.length} Records
+              </span>
+            </div>
+
+            {cases.length === 0 ? (
+              <EmptyState
+                icon="verified"
+                title="Clean Disciplinary Record"
+                description="You currently have zero active or past disciplinary inquiries on file."
+              />
+            ) : (
+              <div className="space-y-3">
+                {cases.map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-4 rounded-2xl bg-slate-50/70 hover:bg-white border border-slate-100 hover:border-purple-100 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-xl bg-purple-50 text-[#5c54eb] flex items-center justify-center font-bold text-xs shrink-0">
+                        #
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-[#1e1b4b]">
+                            {c.token}
+                          </span>
+                          <span className="text-xs font-bold text-slate-600">
+                            · {c.offenseType}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium">
+                          Reported on {c.dateReported} · Points: {c.penaltyPoints}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <StatusBadge status={c.status} />
+                      <SeverityBadge severity={c.severity} />
+                      <Link
+                        to={`/student/cases/${c.token}`}
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#5c54eb] text-slate-600 hover:text-white border border-slate-200 text-xs font-bold transition-all shadow-xs"
+                      >
+                        Details
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </section>
+
+        {/* AI Assistant Card */}
+        <div className="lg:col-span-4">
+          <PromoAssistantCard />
+        </div>
+      </div>
+
     </div>
   );
 }

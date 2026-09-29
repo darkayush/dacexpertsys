@@ -12,6 +12,7 @@ import {
   approveCaseController,
   getCaseHistoryController,
 } from '../controllers/cases.controller.js';
+import { studentHistoryController } from '../controllers/chatbot.controller.js';
 import { uploadEvidenceController } from '../controllers/evidence.controller.js';
 import {
   getCaseTimelineController,
@@ -53,6 +54,7 @@ const upload = multer({
 
 router.get('/', getAllCasesController);
 router.get('/history', getCaseHistoryController);
+router.get('/student/:enrollmentNo', requireRoles('warden', 'chief_warden', 'dsw', 'admin'), studentHistoryController);
 router.get('/:id/timeline', getCaseTimelineController);
 router.post('/:id/timeline', requireRoles('admin'), createCaseTimelineController);
 router.put('/:id/timeline/:timelineId', requireRoles('admin'), updateCaseTimelineController);

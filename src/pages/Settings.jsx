@@ -1,23 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import Sidebar from '../components/Sidebar';
-import WardenSidebar from '../components/WardenSidebar';
-import ChiefWardenSidebar from '../components/ChiefWardenSidebar';
-import StudentSidebar from '../components/StudentSidebar';
+import DACLayout from '../components/layout/DACLayout';
 import { useAuth } from '../context/AuthContext';
 import { changePassword } from '../services/api';
-import { pageVariants, itemVariants } from '../lib/motion';
-
-function getShellForRole(role) {
-  if (role === 'warden') return { title: 'Warden Settings', SidebarComponent: WardenSidebar };
-  if (role === 'chief_warden') return { title: 'Chief Warden Settings', SidebarComponent: ChiefWardenSidebar };
-  if (role === 'student') return { title: 'Student Settings', SidebarComponent: StudentSidebar };
-  return { title: 'Account Settings', SidebarComponent: Sidebar };
-}
 
 export default function Settings() {
   const { currentUser, role } = useAuth();
-  const { title, SidebarComponent } = useMemo(() => getShellForRole(role), [role]);
 
   const [form, setForm] = useState({
     currentPassword: '',
@@ -58,115 +46,168 @@ export default function Settings() {
 
     try {
       setLoading(true);
-      setErrorMessage('');
-      setSuccessMessage('');
-
-      await changePassword({
-        userId: currentUser?.id,
-        currentPassword: form.currentPassword,
-        newPassword: form.newPassword,
-      });
-
-      setSuccessMessage('Password updated successfully');
+      await changePassword(form.currentPassword, form.newPassword);
+      setSuccessMessage('Password changed successfully.');
       setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (error) {
-      setErrorMessage(error?.message || 'Failed to update password');
+    } catch (err) {
+      setErrorMessage(err?.message || 'Failed to update password');
     } finally {
       setLoading(false);
     }
   };
 
-  const inputClass = (field) => (
-    `w-full bg-[#f8fafc] border rounded-xl px-3 py-2.5 text-sm text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 transition-all ${
-      errors[field]
-        ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
-        : 'border-[#e2e8f0] focus:border-[#4f46e5] focus:ring-[#4f46e5]/15'
-    }`
-  );
-
   return (
-    <div className="min-h-screen bg-[#f0f2ff] font-sans antialiased">
-      <SidebarComponent />
+    <DACLayout>
+      <div className="max-w-4xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-black text-[#1e1b4b] tracking-tight">
+            Settings &amp; Security
+          </h1>
+          <p className="text-xs text-slate-400 font-medium mt-0.5">
+            Manage your credentials, authentication preferences, and notification defaults
+          </p>
+        </div>
 
-      <main className="pt-14 md:pt-0 md:pl-64 flex flex-col min-h-screen">
-        <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-20 px-4 md:px-6 py-3">
-          <h1 className="text-[#0f172a] text-xl font-bold">{title}</h1>
-        </header>
-
-        <motion.div
-          variants={pageVariants}
-          initial="hidden"
-          animate="visible"
-          className="flex-1 p-4 md:p-6"
-        >
-          <motion.div variants={itemVariants} className="max-w-2xl bg-white rounded-2xl border border-[#e2e8f0] p-6 space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-[#0f172a]">Change Password</h2>
-              <p className="text-sm text-[#64748b] mt-1">Update your account password securely.</p>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+          
+          {/* Left Column: Account Summary Card */}
+          <div className="md:col-span-5 bg-white rounded-[32px] p-6 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] space-y-5">
+            <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100">
+              <div className="h-12 w-12 rounded-2xl bg-purple-50 text-[#5c54eb] flex items-center justify-center font-bold text-lg">
+                {(currentUser?.name || currentUser?.displayName || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#1e1b4b]">
+                  {currentUser?.name || currentUser?.displayName || 'User Account'}
+                </h3>
+                <p className="text-xs text-slate-400 font-medium truncate max-w-[160px]">
+                  {currentUser?.email}
+                </p>
+              </div>
             </div>
 
-            {errorMessage && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {errorMessage}
+            <div className="space-y-3">
+              <div className="p-3 rounded-2xl bg-slate-50/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Assigned Role
+                </span>
+                <span className="text-xs font-bold text-[#1e1b4b] mt-0.5 block capitalize">
+                  {role?.replace(/_/g, ' ') || 'Officer'}
+                </span>
               </div>
-            )}
+
+              <div className="p-3 rounded-2xl bg-slate-50/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Authentication Type
+                </span>
+                <span className="text-xs font-bold text-[#1e1b4b] mt-0.5 block">
+                  Institutional SSO &amp; Password
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-50/70">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Security Level
+                </span>
+                <span className="text-xs font-bold text-emerald-600 mt-0.5 block flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Authenticated Session
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Password Change Form */}
+          <div className="md:col-span-7 bg-white rounded-[32px] p-6 sm:p-8 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] space-y-6">
+            <div>
+              <h3 className="text-base font-extrabold text-[#1e1b4b]">
+                Change Password
+              </h3>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                Ensure your account uses a secure password of at least 8 characters
+              </p>
+            </div>
 
             {successMessage && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {successMessage}
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                <span>{successMessage}</span>
               </div>
             )}
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-[#334155]" htmlFor="currentPassword">Current Password *</label>
+            {errorMessage && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px]">error</span>
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Current Password
+                </label>
                 <input
-                  id="currentPassword"
                   type="password"
                   value={form.currentPassword}
                   onChange={set('currentPassword')}
-                  className={inputClass('currentPassword')}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50/70 border border-slate-200 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#5c54eb] focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
                 />
-                {errors.currentPassword ? <p className="text-xs text-red-600">{errors.currentPassword}</p> : null}
+                {errors.currentPassword && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{errors.currentPassword}</p>
+                )}
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-[#334155]" htmlFor="newPassword">New Password *</label>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  New Password
+                </label>
                 <input
-                  id="newPassword"
                   type="password"
                   value={form.newPassword}
                   onChange={set('newPassword')}
-                  className={inputClass('newPassword')}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50/70 border border-slate-200 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#5c54eb] focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
                 />
-                {errors.newPassword ? <p className="text-xs text-red-600">{errors.newPassword}</p> : null}
+                {errors.newPassword && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{errors.newPassword}</p>
+                )}
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-[#334155]" htmlFor="confirmPassword">Confirm Password *</label>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Confirm New Password
+                </label>
                 <input
-                  id="confirmPassword"
                   type="password"
                   value={form.confirmPassword}
                   onChange={set('confirmPassword')}
-                  className={inputClass('confirmPassword')}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50/70 border border-slate-200 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#5c54eb] focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all"
                 />
-                {errors.confirmPassword ? <p className="text-xs text-red-600">{errors.confirmPassword}</p> : null}
+                {errors.confirmPassword && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{errors.confirmPassword}</p>
+                )}
               </div>
 
-              <div className="pt-1">
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex items-center justify-center bg-[#4f46e5] text-white text-sm font-semibold rounded-xl px-4 py-2.5 hover:bg-[#4338ca] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 rounded-full bg-[#5c54eb] hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-purple-500/20 transition-all disabled:opacity-50 active:scale-95"
                 >
-                  {loading ? 'Updating...' : 'Update Password'}
+                  {loading ? 'Updating Password...' : 'Save Password Changes'}
                 </button>
               </div>
             </form>
-          </motion.div>
-        </motion.div>
-      </main>
-    </div>
+          </div>
+
+        </div>
+
+      </div>
+    </DACLayout>
   );
 }

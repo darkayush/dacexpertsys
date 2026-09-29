@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import WardenSidebar from '../../components/WardenSidebar';
-import { pageVariants, itemVariants } from '../../lib/motion';
+import DACLayout from '../../components/layout/DACLayout';
+import StatusBadge from '../../components/ui/StatusBadge';
+import SeverityBadge from '../../components/ui/SeverityBadge';
+import EmptyState from '../../components/ui/EmptyState';
 import { getCases, getUsers } from '../../services/api';
 
 function toTitleCase(value = '') {
@@ -19,20 +21,6 @@ function formatDate(value) {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function statusUi(status) {
-  if (status === 'Resolved') return { label: 'Resolved (Warning)', dot: 'bg-emerald-400' };
-  if (status === 'Dac Review') return { label: 'Escalated to Chief Warden', dot: 'bg-blue-400' };
-  if (status === 'Investigation') return { label: 'Investigation', dot: 'bg-yellow-400' };
-  return { label: status || 'Pending Review', dot: 'bg-yellow-400' };
-}
-
-function severityClass(severity) {
-  if (severity === 'Critical') return 'bg-red-100 text-red-700';
-  if (severity === 'High') return 'bg-orange-100 text-orange-700';
-  if (severity === 'Medium') return 'bg-yellow-100 text-yellow-700';
-  return 'bg-slate-100 text-slate-600';
-}
-
 export default function MyCases() {
   const navigate = useNavigate();
   const hasLoggedResponseRef = useRef(false);
@@ -41,6 +29,8 @@ export default function MyCases() {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const pageSize = 10;
 
   useEffect(() => {
     let mounted = true;
@@ -62,15 +52,16 @@ export default function MyCases() {
           const student = usersById[String(entry.student_id)] ?? {};
           const status = toTitleCase(entry.status);
           const severity = toTitleCase(entry.severity);
-          const statusMeta = statusUi(status);
+
           return {
             id: String(entry.id),
-            studentName: student.name || 'Unknown Student',
+            token: entry.external_case_id || `#${entry.id}`,
+            studentName: student.name || entry.student_name || 'Unknown Student',
+            enrollment: student.enrollment_no || entry.enrollment_no || 'N/A',
             offense: toTitleCase(entry.offense_type) || 'N/A',
             severity,
-            severityClass: severityClass(severity),
-            status: statusMeta.label,
-            statusDot: statusMeta.dot,
+            status,
+            penaltyPoints: entry.penalty_points || 0,
             date: formatDate(entry.incident_date ?? entry.created_at),
           };
         });
@@ -92,130 +83,173 @@ export default function MyCases() {
     };
   }, []);
 
-  const filtered = cases.filter((c) => {
-    const matchesSearch =
-      c.studentName.toLowerCase().includes(search.toLowerCase()) ||
-      c.offense.toLowerCase().includes(search.toLowerCase()) ||
-      c.id.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filtered = useMemo(() => {
+    return cases.filter((c) => {
+      const q = search.toLowerCase();
+      const matchesSearch =
+        c.studentName.toLowerCase().includes(q) ||
+        c.offense.toLowerCase().includes(q) ||
+        c.enrollment.toLowerCase().includes(q) ||
+        c.token.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q);
+      const matchesStatus =
+        statusFilter === 'All' || c.status.toLowerCase().includes(statusFilter.toLowerCase());
+      return matchesSearch && matchesStatus;
+    });
+  }, [cases, search, statusFilter]);
 
-  const statusOptions = ['All', 'Pending Review', 'Investigation', 'Escalated to Chief Warden', 'Resolved (Warning)'];
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+  const paginatedCases = useMemo(() => {
+    const start = page * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   return (
-    <div className="min-h-screen bg-[#f0f2ff] font-sans antialiased">
-      <WardenSidebar />
-
-      <main className="pt-14 md:pt-0 md:pl-64 flex flex-col min-h-screen">
-        <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-20 px-4 md:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8] text-[18px]">search</span>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search cases, students..."
-              className="w-full pl-9 pr-4 py-2 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/30 placeholder:text-[#94a3b8] text-[#0f172a]"
-            />
-          </div>
-        </header>
-
-        <motion.div
-          variants={pageVariants}
-          initial="hidden"
-          animate="visible"
-          className="flex-1 p-4 md:p-6 space-y-6"
+    <DACLayout
+      searchValue={search}
+      onSearchChange={setSearch}
+      primaryAction={
+        <Link
+          to="/warden/register"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1e1b4b] hover:bg-black text-white text-xs font-bold transition-all shadow-sm active:scale-95"
         >
-          <div className="flex flex-col gap-2">
-            <h1 className="text-[#0f172a] text-2xl md:text-3xl font-bold tracking-tight">My Cases</h1>
-            <p className="text-[#64748b] text-sm">View and manage all cases registered by you.</p>
-            {loading && <p className="text-[#64748b] text-sm">Loading...</p>}
-            {!!error && <p className="text-sm text-red-600">Error: {error}</p>}
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          <span>Register Case</span>
+        </Link>
+      }
+    >
+      <div className="space-y-6">
+        
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-[#1e1b4b] tracking-tight">
+              My Disciplinary Cases
+            </h1>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              Comprehensive roster of disciplinary incidents registered and managed
+            </p>
           </div>
 
-          <motion.div variants={itemVariants} className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#f1f5f9]">
-              <h3 className="text-base font-bold text-[#0f172a]">All Cases</h3>
-              <div className="flex gap-2">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 text-xs font-medium text-[#64748b] bg-[#f8fafc] border border-[#e2e8f0] rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  {statusOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-                <button className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#64748b] bg-[#f8fafc] border border-[#e2e8f0] rounded-lg hover:bg-slate-100 transition-colors">
-                  <span className="material-symbols-outlined text-[16px]">download</span> Export
-                </button>
-              </div>
-            </div>
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            {['All', 'Pending', 'Chief', 'DSW', 'Resolved'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setStatusFilter(tab);
+                  setPage(0);
+                }}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  statusFilter === tab
+                    ? 'bg-[#5c54eb] text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-[#f8fafc] border-b border-[#f1f5f9]">
-                    {['Token ID', 'Student Name', 'Offense', 'Severity', 'Status', 'Date', 'Action'].map((h, i) => (
-                      <th key={h} className={`px-5 py-3 text-[11px] font-semibold text-[#94a3b8] uppercase tracking-wider ${i === 6 ? 'text-right' : ''}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f8fafc]">
-                  {filtered.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="hover:bg-[#f8fafc] transition-colors"
-                    >
-                      <td className="px-5 py-3.5">
-                        <span className="font-mono text-xs text-[#64748b]">{row.id}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-sm font-medium text-[#0f172a]">{row.studentName}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-sm text-[#334155]">{row.offense}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${row.severityClass}`}>
-                          {row.severity}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
+        {/* Card / List Hybrid Roster */}
+        <div className="bg-white rounded-[28px] p-6 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col justify-between min-h-[460px]">
+          <div>
+            {loading ? (
+              <div className="py-20 flex flex-col items-center justify-center text-slate-400">
+                <span className="material-symbols-outlined animate-spin text-[32px] text-[#5c54eb] mb-2">
+                  progress_activity
+                </span>
+                <p className="text-xs font-semibold">Loading disciplinary roster...</p>
+              </div>
+            ) : paginatedCases.length === 0 ? (
+              <EmptyState
+                icon="folder_off"
+                title="No Matching Cases Found"
+                description="Try refining your search query or switching active status filters."
+              />
+            ) : (
+              <div className="space-y-3">
+                {paginatedCases.map((item) => (
+                  <motion.div
+                    key={item.id}
+                    whileHover={{ scale: 1.005 }}
+                    className="p-4 rounded-2xl bg-slate-50/60 hover:bg-white border border-slate-100/90 hover:border-purple-100 hover:shadow-[0_4px_16px_rgba(92,84,235,0.06)] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+                  >
+                    {/* Left: Token & Student */}
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-10 w-10 rounded-2xl bg-purple-50 group-hover:bg-[#5c54eb] text-[#5c54eb] group-hover:text-white flex items-center justify-center font-extrabold text-xs transition-colors shrink-0">
+                        {item.studentName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
                         <div className="flex items-center gap-2">
-                          <span className={`h-1.5 w-1.5 rounded-full ${row.statusDot}`} />
-                          <span className="text-sm text-[#334155]">{row.status}</span>
+                          <h4 className="text-xs sm:text-sm font-extrabold text-[#1e1b4b] group-hover:text-[#5c54eb] transition-colors">
+                            {item.studentName}
+                          </h4>
+                          <span className="text-xs font-mono font-bold text-slate-400">
+                            {item.token}
+                          </span>
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-sm text-[#64748b]">{row.date}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <button
-                          onClick={() => navigate(`/warden/cases/${row.id}`)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#4f46e5] text-white text-xs font-semibold rounded-lg hover:bg-[#4338ca] transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
-                          Manage
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Enrollment: <span className="text-slate-700 font-bold">{item.enrollment}</span> · Logged: {item.date}
+                        </p>
+                      </div>
+                    </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 bg-[#f8fafc] border-t border-[#f1f5f9]">
-              <p className="text-xs text-[#94a3b8]">Showing <span className="font-semibold text-[#334155]">1–{filtered.length}</span> of <span className="font-semibold text-[#334155]">{cases.length}</span> results</p>
-              <div className="flex gap-1.5">
-                <button className="px-3 py-1.5 text-xs border border-[#e2e8f0] rounded-lg bg-white text-[#64748b] hover:bg-slate-50 disabled:opacity-50 transition-colors">Previous</button>
-                <button className="px-3 py-1.5 text-xs border border-[#e2e8f0] rounded-lg bg-white text-[#64748b] hover:bg-slate-50 transition-colors">Next</button>
+                    {/* Middle: Offense & Points */}
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                        {item.offense}
+                      </span>
+                      {item.penaltyPoints > 0 && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-100">
+                          {item.penaltyPoints} pts
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Right: Badges & Details Action */}
+                    <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                      <StatusBadge status={item.status} />
+                      <SeverityBadge severity={item.severity} />
+                      <Link
+                        to={`/warden/cases/${item.id}`}
+                        className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-[#5c54eb] text-slate-600 hover:text-white border border-slate-200 text-xs font-bold transition-all shadow-xs"
+                      >
+                        Inspect Record
+                      </Link>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
+            )}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-bold text-slate-500">
+                Page {page + 1} of {totalPages} ({filtered.length} total cases)
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+              >
+                Next
+              </button>
             </div>
-          </motion.div>
-        </motion.div>
-      </main>
-    </div>
+          )}
+        </div>
+
+      </div>
+    </DACLayout>
   );
 }

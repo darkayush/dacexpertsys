@@ -186,6 +186,21 @@ export async function getCaseHistory(limit = 6) {
   return fetchJson(`/api/cases/history?limit=${encodeURIComponent(limit)}`);
 }
 
+export async function getStudentHistory(enrollmentNo, filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.offenseType) params.set('offense_type', filters.offenseType);
+  if (filters.substanceType) params.set('substance_type', filters.substanceType);
+  const query = params.toString();
+  return fetchJson(`/api/cases/student/${encodeURIComponent(enrollmentNo)}${query ? `?${query}` : ''}`);
+}
+
+export async function askChatbot(message, conversationId = null) {
+  return fetchJson('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, conversationId }),
+  });
+}
+
 export async function getEvidence(options = {}) {
   const params = new URLSearchParams();
   if (options.caseId) {

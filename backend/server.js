@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import evidenceRoutes from './routes/evidence.routes.js';
 import rulesRoutes from './routes/rules.routes.js';
+import chatbotRoutes from './routes/chatbot.routes.js';
 import { verifyToken } from './middleware/auth.middleware.js';
 
 const app = express();
@@ -30,7 +31,7 @@ app.use('/uploads', express.static(uploadsDir));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
-});
+}); 
 
 app.get('/test', async (req, res) => {
   try {
@@ -51,6 +52,7 @@ app.use('/api/cases', verifyToken, casesRoutes);
 app.use('/api/notifications', verifyToken, notificationsRoutes);
 app.use('/api/evidence', verifyToken, evidenceRoutes);
 app.use('/api/rules', verifyToken, rulesRoutes);
+app.use('/api/chat', verifyToken, chatbotRoutes);
 
 async function startServer() {
   try {

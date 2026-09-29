@@ -1,27 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
-  { to: '/student/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { to: '/student/cases', label: 'My Cases', icon: 'folder_open' },
+  { to: '/student/dashboard', label: 'My Overview', icon: 'grid_view' },
+  { to: '/student/cases', label: 'My Conduct Cases', icon: 'gavel' },
+  { to: '/student/penalty-points', label: 'Penalty Points', icon: 'stars' },
+  { to: '/student/disciplinary-policy', label: 'DAC Policy', icon: 'menu_book' },
+  { to: '/student/profile', label: 'Student Profile', icon: 'person' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
-  { to: '/student/penalty-points', label: 'Penalty Points', icon: 'report' },
-  { to: '/student/profile', label: 'Profile', icon: 'person' },
-  { to: '/student/disciplinary-policy', label: 'Disciplinary Policy', icon: 'gavel' },
 ];
 
-function SidebarContent({ onClose }) {
+function SidebarInner({ collapsed, setCollapsed, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, logout } = useAuth();
+  const { currentUser, role, logout } = useAuth();
 
-  const displayName = currentUser?.displayName || currentUser?.email || 'Student';
-  const photoURL = currentUser?.photoURL || null;
-  const email = currentUser?.email || '';
+  const displayName = currentUser?.displayName || currentUser?.name || currentUser?.email || 'Student';
   const initials = displayName
     .split(' ')
-    .map((word) => word[0])
+    .map((w) => w[0])
     .join('')
     .slice(0, 2)
     .toUpperCase();
@@ -33,83 +32,113 @@ function SidebarContent({ onClose }) {
 
   useEffect(() => {
     if (onClose) onClose();
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   return (
-    <div className="flex flex-col justify-between h-full">
-      <div className="p-6 overflow-y-auto flex-1">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="rounded-lg overflow-hidden flex items-center justify-center shrink-0">
-            <img src="/logo.png" alt="DAC Logo" className="w-10 h-10 object-contain" />
+    <div className="flex flex-col h-full bg-white select-none">
+      {/* ── Brand / Header ── */}
+      <div className={`p-5 flex items-center ${collapsed ? 'justify-center' : 'justify-between'} border-b border-[#edf2f7]`}>
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-teal-400 to-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 shrink-0">
+            <span className="material-symbols-outlined text-[22px]">school</span>
           </div>
-          <div className="flex-1">
-            <h1 className="text-[#0f172a] font-bold text-lg leading-tight">DAC System</h1>
-            <p className="text-[#64748b] text-xs font-medium">Student</p>
-          </div>
-
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="md:hidden text-[#64748b] hover:text-[#0f172a] transition-colors"
-              aria-label="Close menu"
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex flex-col overflow-hidden"
             >
-              <span className="material-symbols-outlined text-[22px]">close</span>
-            </button>
+              <h1 className="text-sm font-extrabold text-[#0f172a] leading-tight tracking-tight truncate">
+                DAC System
+              </h1>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                Student Portal
+              </span>
+            </motion.div>
           )}
         </div>
 
-        <nav className="flex flex-col gap-1">
-          {navItems.map(({ to, label, icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-colors ${isActive
-                  ? 'bg-[#4f46e5]/10 text-[#4f46e5]'
-                  : 'text-[#64748b] hover:bg-slate-50 hover:text-[#0f172a]'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={`material-symbols-outlined text-[20px] ${isActive ? 'text-[#4f46e5]' : 'text-[#64748b]'}`}>
-                    {icon}
-                  </span>
-                  <span className="text-sm">{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+        {/* Desktop Collapse Toggle */}
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="hidden md:flex h-7 w-7 rounded-xl hover:bg-slate-100 text-[#94a3b8] hover:text-[#0f172a] items-center justify-center transition-colors"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {collapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
+
+        {/* Mobile Close Button */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="md:hidden text-[#94a3b8] hover:text-[#0f172a] p-1"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        )}
       </div>
 
-      <div className="p-6 border-t border-[#e2e8f0]">
-        <div className="flex items-center gap-3">
-          {photoURL ? (
-            <img
-              src={photoURL}
-              alt={displayName}
-              referrerPolicy="no-referrer"
-              className="h-10 w-10 rounded-full border-2 border-white shadow-sm shrink-0 object-cover"
-            />
-          ) : (
-            <div className="h-10 w-10 rounded-full bg-[#4f46e5] flex items-center justify-center shrink-0 border-2 border-white shadow-sm">
-              <span className="text-white text-xs font-bold">{initials}</span>
+      {/* ── Nav Items ── */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1.5">
+        {navItems.map(({ to, label, icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            title={collapsed ? label : undefined}
+            className={({ isActive }) =>
+              `group relative flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${
+                isActive
+                  ? 'bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-md shadow-emerald-500/25'
+                  : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a]'
+              } ${collapsed ? 'justify-center px-2' : ''}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span
+                  className={`material-symbols-outlined text-[22px] transition-colors ${
+                    isActive ? 'text-white' : 'text-[#94a3b8] group-hover:text-emerald-500'
+                  }`}
+                >
+                  {icon}
+                </span>
+                {!collapsed && <span className="truncate">{label}</span>}
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* ── Bottom User Chip ── */}
+      <div className="p-3 border-t border-[#edf2f7] bg-[#fcfdfe]">
+        <div
+          className={`flex items-center gap-3 p-2 rounded-2xl hover:bg-slate-100/80 transition-colors ${
+            collapsed ? 'justify-center p-1' : ''
+          }`}
+        >
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-teal-400 to-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-xs shrink-0">
+            {initials}
+          </div>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-[#0f172a] truncate">{displayName}</p>
+              <p className="text-[10px] text-[#94a3b8] truncate capitalize">{role || 'Student'}</p>
             </div>
           )}
-
-          <div className="flex flex-col overflow-hidden flex-1">
-            <p className="text-[#0f172a] text-sm font-semibold truncate">{displayName}</p>
-            <p className="text-[#64748b] text-xs truncate">{email}</p>
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="ml-auto text-[#64748b] hover:text-[#ef4444] transition-colors shrink-0"
-            title="Logout"
-          >
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-          </button>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Logout"
+              className="p-1.5 rounded-xl hover:bg-rose-50 text-[#94a3b8] hover:text-rose-600 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">logout</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -117,47 +146,67 @@ function SidebarContent({ onClose }) {
 }
 
 export default function StudentSidebar() {
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [mobileOpen]);
 
   return (
     <>
-      <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-[#e2e8f0] flex items-center gap-3 px-4 h-14">
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="text-[#64748b] hover:text-[#4f46e5] transition-colors"
-          aria-label="Open menu"
-        >
-          <span className="material-symbols-outlined text-[26px]">menu</span>
-        </button>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center shrink-0">
-            <img src="/logo.png" alt="DAC Logo" className="w-7 h-7 object-contain" />
-          </div>
-          <span className="text-[#0f172a] font-bold text-base">DAC System</span>
+      {/* Mobile Top Bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-white/90 backdrop-blur-md border-b border-[#edf2f7] z-30 px-4 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="p-2 rounded-xl hover:bg-slate-100 text-[#0f172a]"
+          >
+            <span className="material-symbols-outlined text-[22px]">menu</span>
+          </button>
+          <span className="text-sm font-extrabold text-[#0f172a]">DAC System</span>
         </div>
-      </header>
+        <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-teal-400 to-emerald-600 flex items-center justify-center text-white text-xs font-bold shadow-xs">
+          S
+        </div>
+      </div>
 
-      <aside className="hidden md:flex fixed top-0 left-0 w-64 h-screen bg-white border-r border-[#e2e8f0] flex-col z-30">
-        <SidebarContent />
-      </aside>
-
-      {mobileOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
+      {/* Desktop Fixed Sidebar */}
       <aside
-        className={`md:hidden fixed top-0 left-0 h-screen w-72 bg-white border-r border-[#e2e8f0] z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`hidden md:flex flex-col fixed top-0 left-0 h-screen border-r border-[#edf2f7] z-30 transition-all duration-300 ease-in-out ${
+          collapsed ? 'w-20' : 'w-64'
+        }`}
       >
-        <SidebarContent onClose={() => setMobileOpen(false)} />
+        <SidebarInner
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+        />
       </aside>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)}
+              className="md:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40"
+            />
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="md:hidden fixed top-0 left-0 bottom-0 w-64 bg-white z-50 shadow-2xl"
+            >
+              <SidebarInner
+                collapsed={false}
+                setCollapsed={() => {}}
+                onClose={() => setMobileOpen(false)}
+              />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </>
   );
 }

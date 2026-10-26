@@ -59,20 +59,16 @@ CREATE TABLE IF NOT EXISTS users (
     total_points INT DEFAULT 0,
     parent_email TEXT,
     gender TEXT,
-    student_status TEXT DEFAULT 'active'
+    student_status TEXT,
+    CONSTRAINT users_student_status_students_only CHECK (role = 'student' OR student_status IS NULL)
 );
 
+-- Student details (name, enrollment, program, hostel, room, gender) live in users;
+-- read them through student_id.
 CREATE TABLE IF NOT EXISTS cases (
     id SERIAL PRIMARY KEY,
     student_id INT NOT NULL REFERENCES users(id),
     external_case_id TEXT,
-    enrollment_no TEXT,
-    student_name TEXT,
-    program TEXT,
-    batch INT,
-    gender TEXT,
-    hostel TEXT,
-    room TEXT,
     offense_type TEXT,
     substance_type TEXT,
     offense_level INT,
@@ -173,7 +169,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS case_timeline_external_event_timestamp_unique_
 CREATE INDEX IF NOT EXISTS cases_student_id_idx ON cases(student_id);
 CREATE INDEX IF NOT EXISTS cases_offense_type_idx ON cases(offense_type);
 CREATE INDEX IF NOT EXISTS cases_substance_type_idx ON cases(substance_type);
-CREATE INDEX IF NOT EXISTS cases_hostel_idx ON cases(hostel);
 CREATE INDEX IF NOT EXISTS cases_status_idx ON cases(status);
 CREATE INDEX IF NOT EXISTS cases_incident_date_idx ON cases(incident_date);
 CREATE INDEX IF NOT EXISTS case_timeline_external_case_id_idx ON case_timeline(external_case_id);

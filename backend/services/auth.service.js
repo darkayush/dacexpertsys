@@ -38,8 +38,8 @@ export async function updateUserPasswordById(id, passwordHash) {
 export async function createUserFromGoogle({ name, email, role }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const query = `
-    INSERT INTO users (name, email, role)
-    VALUES ($1, $2, $3)
+    INSERT INTO users (name, email, role, student_status)
+    VALUES ($1, $2, $3, CASE WHEN $3::user_role = 'student' THEN 'active' END)
     RETURNING id, name, email, role
   `;
   const result = await pool.query(query, [name, normalizedEmail, role]);

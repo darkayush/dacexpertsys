@@ -128,7 +128,7 @@ export default function ViewCase() {
             email: student.email || 'N/A',
             contact: student.contact || 'N/A',
             hostel: student.hostel || matched.hostel || 'N/A',
-            room: student.room || matched.room_no || 'N/A',
+            room: student.room || matched.room || 'N/A',
             penaltyPoints: student.total_points ?? points,
           },
           previousOffences,

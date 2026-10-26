@@ -83,6 +83,7 @@ async function importFromCsv(client) {
   console.log('Importing from CSV files in', dataDir);
   // Import Users
   for (const r of readCsv(files.users)) {
+    const role = safeRole(r.role) || 'student';
     await client.query(
       `INSERT INTO users (name,email,password,role,program,enrollment_no,year,hostel,room,total_points,parent_email,gender,student_status)
        VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -90,7 +91,7 @@ async function importFromCsv(client) {
       [
         nullable(r.name),
         nullable(r.email)?.toLowerCase(),
-        safeRole(r.role) || 'student',
+        role,
         nullable(r.program),
         nullable(r.enrollment_no),
         num(r.year),
@@ -99,7 +100,7 @@ async function importFromCsv(client) {
         num(r.total_points) || 0,
         nullable(r.parent_email),
         nullable(r.gender),
-        nullable(r.student_status),
+        role === 'student' ? nullable(r.student_status) : null,
       ]
     );
   }
@@ -109,19 +110,12 @@ async function importFromCsv(client) {
     const student = await client.query('SELECT id FROM users WHERE enrollment_no = $1', [nullable(r.enrollment_no)]);
     if (!student.rows[0]) continue;
     await client.query(
-      `INSERT INTO cases (student_id,external_case_id,enrollment_no,student_name,program,batch,gender,hostel,room,offense_type,substance_type,offense_level,severity,penalty_points,fine,incident_date,incident_time,incident_location,alcohol_reading,description,notes,status,decision,resolved_by_role,resolved_at,created_by_role,assigned_to_role,created_at,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::case_severity,$14,$15,$16,$17,$18,$19,$20,$21,$22::case_status,$23,$24::user_role,$25,$26::user_role,$27::user_role,$28,$28)
-       ON CONFLICT (external_case_id) WHERE external_case_id IS NOT NULL DO UPDATE SET student_id=EXCLUDED.student_id,enrollment_no=EXCLUDED.enrollment_no,student_name=EXCLUDED.student_name,program=EXCLUDED.program,batch=EXCLUDED.batch,gender=EXCLUDED.gender,hostel=EXCLUDED.hostel,room=EXCLUDED.room,offense_type=EXCLUDED.offense_type,substance_type=EXCLUDED.substance_type,offense_level=EXCLUDED.offense_level,severity=EXCLUDED.severity,penalty_points=EXCLUDED.penalty_points,fine=EXCLUDED.fine,incident_date=EXCLUDED.incident_date,incident_time=EXCLUDED.incident_time,incident_location=EXCLUDED.incident_location,alcohol_reading=EXCLUDED.alcohol_reading,description=EXCLUDED.description,notes=EXCLUDED.notes,status=EXCLUDED.status,decision=EXCLUDED.decision,resolved_by_role=EXCLUDED.resolved_by_role,resolved_at=EXCLUDED.resolved_at,created_by_role=EXCLUDED.created_by_role,assigned_to_role=EXCLUDED.assigned_to_role,updated_at=NOW()`,
+      `INSERT INTO cases (student_id,external_case_id,offense_type,substance_type,offense_level,severity,penalty_points,fine,incident_date,incident_time,incident_location,alcohol_reading,description,notes,status,decision,resolved_by_role,resolved_at,created_by_role,assigned_to_role,created_at,updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6::case_severity,$7,$8,$9,$10,$11,$12,$13,$14,$15::case_status,$16,$17::user_role,$18,$19::user_role,$20::user_role,$21,$21)
+       ON CONFLICT (external_case_id) WHERE external_case_id IS NOT NULL DO UPDATE SET student_id=EXCLUDED.student_id,offense_type=EXCLUDED.offense_type,substance_type=EXCLUDED.substance_type,offense_level=EXCLUDED.offense_level,severity=EXCLUDED.severity,penalty_points=EXCLUDED.penalty_points,fine=EXCLUDED.fine,incident_date=EXCLUDED.incident_date,incident_time=EXCLUDED.incident_time,incident_location=EXCLUDED.incident_location,alcohol_reading=EXCLUDED.alcohol_reading,description=EXCLUDED.description,notes=EXCLUDED.notes,status=EXCLUDED.status,decision=EXCLUDED.decision,resolved_by_role=EXCLUDED.resolved_by_role,resolved_at=EXCLUDED.resolved_at,created_by_role=EXCLUDED.created_by_role,assigned_to_role=EXCLUDED.assigned_to_role,updated_at=NOW()`,
       [
         student.rows[0].id,
         nullable(r.case_id),
-        nullable(r.enrollment_no),
-        nullable(r.student_name),
-        nullable(r.program),
-        num(r.batch),
-        nullable(r.gender),
-        nullable(r.hostel),
-        nullable(r.room),
         nullable(r.offense_type),
         nullable(r.substance_type),
         num(r.offense_level),

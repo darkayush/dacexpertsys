@@ -5,6 +5,20 @@ import {
 } from './notifications.service.js';
 import { createCaseTimelineService } from './timeline.service.js';
 
+// Student details live in users; cases only store student_id.
+const CASE_WITH_STUDENT_SELECT = `
+  SELECT
+    cases.*,
+    users.name AS student_name,
+    users.enrollment_no,
+    users.program,
+    users.gender,
+    users.hostel,
+    users.room
+  FROM cases
+  JOIN users ON users.id = cases.student_id
+`;
+
 function canActOnRole(role) {
   return ['chief_warden', 'dsw', 'admin'].includes(String(role || '').toLowerCase());
 }
@@ -47,39 +61,38 @@ export async function getAllCasesService({ requesterRole, requesterId, role, sta
 
   if (requesterRole === 'student') {
     values.push(requesterId);
-    conditions.push(`student_id = $${values.length}`);
+    conditions.push(`cases.student_id = $${values.length}`);
   } else if (requesterRole === 'warden') {
     // Wardens oversee disciplinary cases; only restrict if explicitly asked for "my_created_only"
     if (role === 'my_created_only') {
       values.push(requesterId);
-      conditions.push(`created_by = $${values.length}`);
+      conditions.push(`cases.created_by = $${values.length}`);
     }
   } else if (requesterRole === 'chief_warden' || requesterRole === 'admin') {
     if (role && role !== 'all' && requesterRole !== 'admin') {
       values.push(role);
-      conditions.push(`assigned_to_role = $${values.length}`);
+      conditions.push(`cases.assigned_to_role = $${values.length}`);
     }
   } else if (requesterRole === 'dsw') {
     // DSW needs pending queue plus downstream status visibility for dashboard stats.
     if (status) {
       values.push(status);
-      conditions.push(`status = $${values.length}`);
+      conditions.push(`cases.status = $${values.length}`);
     } else {
-      conditions.push(`status IN ('pending_dsw', 'pending_admin', 'resolved')`);
+      conditions.push(`cases.status IN ('pending_dsw', 'pending_admin', 'resolved')`);
     }
   }
 
   if (status && requesterRole !== 'dsw') {
     values.push(status);
-    conditions.push(`status = $${values.length}`);
+    conditions.push(`cases.status = $${values.length}`);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT *
-    FROM cases
+    ${CASE_WITH_STUDENT_SELECT}
     ${whereClause}
-    ORDER BY incident_date DESC NULLS LAST, created_at DESC
+    ORDER BY cases.incident_date DESC NULLS LAST, cases.created_at DESC
   `;
 
   const result = await pool.query(query, values);
@@ -185,7 +198,7 @@ export async function getCaseHistoryService({ requesterRole, requesterId, limit 
       cases.status,
       cases.created_at,
       cases.incident_date,
-      COALESCE(users.name, cases.student_name, 'Unknown Student') AS student_name
+      COALESCE(users.name, 'Unknown Student') AS student_name
     FROM cases
     LEFT JOIN users ON users.id = cases.student_id
     ${whereClause}
@@ -282,7 +295,7 @@ export async function approveCaseService(caseId, actor) {
 }
 
 export async function getCaseByIdService(caseId) {
-  const result = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
+  const result = await pool.query(`${CASE_WITH_STUDENT_SELECT} WHERE cases.id = $1`, [caseId]);
   return result.rows[0] || null;
 }
 

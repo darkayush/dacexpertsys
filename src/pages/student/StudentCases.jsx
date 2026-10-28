@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import StudentCasesTable from '../../components/student/StudentCasesTable';
 import { getCases } from '../../services/api';
 
@@ -19,6 +19,8 @@ function formatDate(value) {
 
 export default function StudentCases() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const search = (searchParams.get('q') || '').trim().toLowerCase();
   const hasLoggedResponseRef = useRef(false);
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -69,13 +71,20 @@ export default function StudentCases() {
     };
   }, []);
 
+  const filteredCases = useMemo(() => {
+    if (!search) return cases;
+    return cases.filter((c) =>
+      [c.token, c.offenseType, c.status, c.severity].some((v) => String(v).toLowerCase().includes(search))
+    );
+  }, [cases, search]);
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-bold text-[#0f172a]">My Cases</h3>
       {loading && <p className="text-[#64748b] text-sm">Loading...</p>}
       {!!error && <p className="text-sm text-red-600">Error: {error}</p>}
       <StudentCasesTable
-        cases={cases}
+        cases={filteredCases}
         onViewCase={(token) => navigate(`/student/cases/${token}`)}
       />
     </div>

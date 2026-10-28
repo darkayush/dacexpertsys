@@ -7,6 +7,20 @@ let lenisInstance = null;
  * Initialises a single shared Lenis instance for the whole app.
  * Call this once at the root level (e.g. inside App or main).
  */
+/**
+ * Scrolls an element into view through the shared Lenis instance
+ * (falls back to native scrolling when Lenis is not running).
+ */
+export function scrollToElement(el) {
+    if (!el) return;
+    if (lenisInstance) {
+        // Content may have just grown (data loaded); refresh Lenis' scroll limits first.
+        lenisInstance.resize();
+        lenisInstance.scrollTo(el, { offset: -24 });
+    }
+    else el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export function useLenis() {
     useEffect(() => {
         if (lenisInstance) return; // already running

@@ -44,6 +44,9 @@ function updateConversationState(conversationId, userMsg, botAnswer, meta = {}) 
   });
 }
 
+// Admission batch is the first two digits of the enrollment number (e.g. 240123 -> 2024).
+const STUDENT_BATCH_SQL = "('20' || LEFT(u.enrollment_no, 2))::int";
+
 function roleScope(user) {
   if (user && String(user.role).toLowerCase() === 'student') {
     return { clause: 'c.student_id = $1', values: [Number(user.sub || user.id)] };
@@ -91,7 +94,7 @@ async function handleCountQuery(user, question, filters) {
       `SELECT COUNT(*)::int AS count 
        FROM (
          SELECT c.student_id 
-         FROM cases c 
+         FROM cases c JOIN users u ON u.id = c.student_id 
          WHERE ${conditions.join(' AND ')} 
          GROUP BY c.student_id 
          HAVING COUNT(*) > 1
@@ -129,11 +132,11 @@ async function handleCountQuery(user, question, filters) {
       }
     }
     const res = await pool.query(
-      `SELECT c.hostel, COUNT(*)::int AS count 
-       FROM cases c 
-       WHERE ${conditions.join(' AND ')} AND c.hostel IS NOT NULL 
-       GROUP BY c.hostel 
-       ORDER BY count DESC, c.hostel ASC 
+      `SELECT u.hostel, COUNT(*)::int AS count 
+       FROM cases c JOIN users u ON u.id = c.student_id 
+       WHERE ${conditions.join(' AND ')} AND u.hostel IS NOT NULL 
+       GROUP BY u.hostel 
+       ORDER BY count DESC, u.hostel ASC 
        LIMIT 1`,
       values
     );
@@ -157,11 +160,11 @@ async function handleCountQuery(user, question, filters) {
       }
     }
     const res = await pool.query(
-      `SELECT c.program, COUNT(*)::int AS count 
-       FROM cases c 
-       WHERE ${conditions.join(' AND ')} AND c.program IS NOT NULL 
-       GROUP BY c.program 
-       ORDER BY count DESC, c.program ASC 
+      `SELECT u.program, COUNT(*)::int AS count 
+       FROM cases c JOIN users u ON u.id = c.student_id 
+       WHERE ${conditions.join(' AND ')} AND u.program IS NOT NULL 
+       GROUP BY u.program 
+       ORDER BY count DESC, u.program ASC 
        LIMIT 1`,
       values
     );
@@ -177,15 +180,15 @@ async function handleCountQuery(user, question, filters) {
 
   // Standard case count
   if (filters.program) {
-    add('LOWER(c.program) = LOWER(?)', filters.program);
+    add('LOWER(u.program::text) = LOWER(?)', filters.program);
   }
 
   if (filters.batch) {
-    add('c.batch = ?', filters.batch);
+    add(`${STUDENT_BATCH_SQL} = ?`, filters.batch);
   }
 
   if (filters.gender) {
-    add('LOWER(c.gender) = LOWER(?)', filters.gender);
+    add('LOWER(u.gender) = LOWER(?)', filters.gender);
   }
 
   if (filters.severity) {
@@ -209,7 +212,7 @@ async function handleCountQuery(user, question, filters) {
   }
 
   if (filters.hostel) {
-    add('LOWER(c.hostel) = LOWER(?)', filters.hostel);
+    add('LOWER(u.hostel) = LOWER(?)', filters.hostel);
   }
 
   if (filters.status) {
@@ -224,7 +227,7 @@ async function handleCountQuery(user, question, filters) {
   const countCol = countStudents ? 'DISTINCT c.student_id' : '*';
 
   const res = await pool.query(
-    `SELECT COUNT(${countCol})::int AS count FROM cases c WHERE ${conditions.join(' AND ')}`,
+    `SELECT COUNT(${countCol})::int AS count FROM cases c JOIN users u ON u.id = c.student_id WHERE ${conditions.join(' AND ')}`,
     values
   );
 
@@ -274,19 +277,19 @@ async function fetchCaseRecords(user, filters, limit = 10) {
     add('c.external_case_id = ?', filters.case_id);
   }
   if (filters.enrollment_no) {
-    add('c.enrollment_no = ?', filters.enrollment_no);
+    add('u.enrollment_no = ?', filters.enrollment_no);
   }
   if (filters.student_name) {
-    add('LOWER(c.student_name) LIKE LOWER(?)', `%${filters.student_name}%`);
+    add('LOWER(u.name) LIKE LOWER(?)', `%${filters.student_name}%`);
   }
   if (filters.program) {
-    add('LOWER(c.program) = LOWER(?)', filters.program);
+    add('LOWER(u.program::text) = LOWER(?)', filters.program);
   }
   if (filters.batch) {
-    add('c.batch = ?', filters.batch);
+    add(`${STUDENT_BATCH_SQL} = ?`, filters.batch);
   }
   if (filters.gender) {
-    add('LOWER(c.gender) = LOWER(?)', filters.gender);
+    add('LOWER(u.gender) = LOWER(?)', filters.gender);
   }
   if (filters.severity) {
     add('c.severity = ?::case_severity', filters.severity);
@@ -295,7 +298,7 @@ async function fetchCaseRecords(user, filters, limit = 10) {
     add('c.offense_level = ?', filters.offense_level);
   }
   if (filters.hostel) {
-    add('LOWER(c.hostel) = LOWER(?)', filters.hostel);
+    add('LOWER(u.hostel) = LOWER(?)', filters.hostel);
   }
   if (filters.substance_type) {
     if (filters.substance_type.toLowerCase() === 'alcohol') {
@@ -315,10 +318,11 @@ async function fetchCaseRecords(user, filters, limit = 10) {
   const limitIdx = values.length;
 
   const sql = `
-    SELECT c.id, c.external_case_id AS case_id, c.student_name, c.enrollment_no,
+    SELECT c.id, c.external_case_id AS case_id, u.name AS student_name, u.enrollment_no,
            c.offense_type, c.substance_type, c.penalty_points, c.fine,
-           c.incident_date, c.hostel, c.status, c.description
+           c.incident_date, u.hostel, c.status, c.description
     FROM cases c
+    JOIN users u ON u.id = c.student_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY c.incident_date DESC NULLS LAST, c.id DESC
     LIMIT $${limitIdx}
@@ -367,11 +371,12 @@ export async function answerChatbotQuestion(user, rawMessage, conversationId = n
     if (studentRecord) {
       const studentCases = await pool.query(
         `SELECT c.id, c.external_case_id AS case_id, c.offense_type, c.substance_type,
-                c.penalty_points, c.fine, c.incident_date, c.hostel, c.status, c.description, c.decision
+                c.penalty_points, c.fine, c.incident_date, u.hostel, c.status, c.description, c.decision
          FROM cases c
-         WHERE c.student_id = $1 OR c.enrollment_no = $2
+         JOIN users u ON u.id = c.student_id
+         WHERE c.student_id = $1
          ORDER BY c.incident_date DESC NULLS LAST`,
-        [studentRecord.id, studentRecord.enrollment_no]
+        [studentRecord.id]
       );
 
       structuredContext += `\n[DATABASE: Student Disciplinary Profile]\n`
@@ -405,7 +410,13 @@ export async function answerChatbotQuestion(user, rawMessage, conversationId = n
   // B. Specific Case lookup
   let caseDetailRecord = null;
   if (filters.case_id) {
-    const cRes = await pool.query('SELECT * FROM cases WHERE external_case_id = $1', [filters.case_id]);
+    const cRes = await pool.query(
+      `SELECT c.*, u.name AS student_name, u.enrollment_no, u.hostel, u.room
+       FROM cases c
+       JOIN users u ON u.id = c.student_id
+       WHERE c.external_case_id = $1`,
+      [filters.case_id]
+    );
     caseDetailRecord = cRes.rows[0];
 
     if (caseDetailRecord) {

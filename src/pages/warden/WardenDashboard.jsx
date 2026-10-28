@@ -272,7 +272,7 @@ export default function WardenDashboard() {
         {/* ── ROW 3: Recent Case Activity, AI Copilot & Analytics ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
           {/* Left Wide: Case Activity Card */}
-          <div className="lg:col-span-6">
+          <div id="search-results" className="lg:col-span-6">
             <ActivityCard
               title="Recent Case Activity"
               cases={paginatedCases}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import Sidebar from '../components/Sidebar';
+import DACLayout from '../components/layout/DACLayout';
 import StudentDetailsCard from '../components/StudentDetailsCard';
 import PreviousOffencesTable from '../components/PreviousOffencesTable';
 import IncidentDetailsCard from '../components/IncidentDetailsCard';
@@ -128,7 +128,7 @@ export default function ViewCase() {
             email: student.email || 'N/A',
             contact: student.contact || 'N/A',
             hostel: student.hostel || matched.hostel || 'N/A',
-            room: student.room || matched.room_no || 'N/A',
+            room: student.room || matched.room || 'N/A',
             penaltyPoints: student.total_points ?? points,
           },
           previousOffences,
@@ -172,10 +172,8 @@ export default function ViewCase() {
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-[#f5f7fc] font-sans antialiased text-[#1e293b]">
-      <Sidebar />
-
-      <main className="pt-16 md:pt-0 md:pl-20 xl:pl-64 flex flex-col min-h-screen transition-all">
+    <DACLayout>
+      <div className="flex flex-col text-[#1e293b]">
         {/* Sticky Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-[#edf2f7] sticky top-0 z-20 px-6 py-4">
           <div className="flex items-center justify-between flex-wrap gap-4 max-w-[1400px] mx-auto w-full">
@@ -296,7 +294,7 @@ export default function ViewCase() {
             </motion.div>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </DACLayout>
   );
 }

@@ -254,7 +254,7 @@ export default function ChiefWardenDashboard() {
 
         {/* ── ROW 3: Priority Review Queue, AI Assistant & Analytics ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-          <div className="lg:col-span-6">
+          <div id="search-results" className="lg:col-span-6">
             <ActivityCard
               title="Cases Awaiting Approval"
               cases={paginatedCases}

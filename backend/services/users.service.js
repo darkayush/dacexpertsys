@@ -64,8 +64,8 @@ export async function createUserService({
   room = null,
 }) {
   const query = `
-    INSERT INTO users (name, email, password, role, program, enrollment_no, year, hostel, room)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    INSERT INTO users (name, email, password, role, program, enrollment_no, year, hostel, room, student_status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4::user_role = 'student' THEN 'active' END)
     RETURNING id, name, email, role, program, enrollment_no, year, hostel, room, total_points
   `;
   const result = await pool.query(query, [
@@ -104,6 +104,10 @@ export async function updateUserService(userId, payload) {
         : payload[key];
       values.push(value);
       updates.push(`${column} = $${values.length}`);
+      if (key === 'role') {
+        // student_status only applies to students
+        updates.push(`student_status = CASE WHEN $${values.length}::user_role = 'student' THEN COALESCE(student_status, 'active') END`);
+      }
     }
   });
 
@@ -133,7 +137,8 @@ export async function deleteUserService(userId) {
 export async function updateUserRoleService(userId, role) {
   const query = `
     UPDATE users
-    SET role = $2
+    SET role = $2,
+        student_status = CASE WHEN $2::user_role = 'student' THEN COALESCE(student_status, 'active') END
     WHERE id = $1
     RETURNING id, name, email, role, program, enrollment_no, year, hostel, room, total_points
   `;

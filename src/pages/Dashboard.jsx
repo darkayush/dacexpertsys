@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { scrollToElement } from '../hooks/useLenis';
 import DACLayout from '../components/layout/DACLayout';
 import GreetingCard from '../components/ui/GreetingCard';
 import QuickActionCard from '../components/ui/QuickActionCard';
@@ -32,7 +33,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { role, currentUser } = useAuth();
   const hasLoggedResponseRef = useRef(false);
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [activeFilter, setActiveFilter] = useState('all');
   const [page, setPage] = useState(0);
   const pageSize = 5;
@@ -163,6 +165,11 @@ export default function Dashboard() {
     setPage(0);
   }, [search, activeFilter]);
 
+  // Arriving from the top-bar search on another page (?q=): show the results.
+  useEffect(() => {
+    if (!loading && searchParams.get('q')) scrollToElement(document.getElementById('search-results'));
+  }, [loading, searchParams]);
+
   const filtered = useMemo(() => {
     let list = cases;
     if (activeFilter === 'active') {
@@ -289,7 +296,7 @@ export default function Dashboard() {
 
         {/* ── ROW 3: Recent Case Activity, AI Assistant & Analytics ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-          <div className="lg:col-span-6">
+          <div id="search-results" className="lg:col-span-6">
             <ActivityCard
               title={
                 activeFilter === 'active'

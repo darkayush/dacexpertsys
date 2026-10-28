@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Sidebar from '../components/Sidebar';
+import DACLayout from '../components/layout/DACLayout';
 import { pageVariants, listVariants, itemVariants } from '../lib/motion';
 import { getCases, getUsers } from '../services/api';
 
@@ -164,6 +164,7 @@ const FACTORS = [
 export default function Reports() {
   const hasLoggedResponseRef = useRef(false);
   const [selectedCase, setSelectedCase] = useState(null);
+  const [search, setSearch] = useState('');
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -219,12 +220,20 @@ export default function Reports() {
     };
   }, []);
 
+  const filteredCases = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return cases;
+    return cases.filter((c) =>
+      [c.id, c.studentName, c.studentId, c.offense].some((v) => String(v).toLowerCase().includes(q))
+    );
+  }, [cases, search]);
+
   const renderDetailView = () => (
     <motion.div
       variants={pageVariants}
       initial="hidden"
       animate="visible"
-      className="max-w-[1152px] mx-auto px-4 md:px-8 py-8 md:py-16"
+      className="max-w-[1152px] mx-auto"
     >
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
         <div>
@@ -346,7 +355,7 @@ export default function Reports() {
       variants={pageVariants}
       initial="hidden"
       animate="visible"
-      className="max-w-[1152px] mx-auto px-4 md:px-8 py-8 md:py-16"
+      className="max-w-[1152px] mx-auto"
     >
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
         <div>
@@ -364,7 +373,7 @@ export default function Reports() {
         animate="visible"
         className="flex flex-col gap-4"
       >
-        {cases.map((c) => (
+        {filteredCases.map((c) => (
           <motion.div
             key={c.id}
             variants={itemVariants}
@@ -404,9 +413,8 @@ export default function Reports() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f6f6f8] font-inter">
-      <Sidebar />
-      <main className="pt-14 md:pt-0 md:pl-64 overflow-y-auto">
+    <DACLayout searchValue={search} onSearchChange={setSearch}>
+      <div className="font-inter">
         <AnimatePresence mode="wait">
           {selectedCase ? (
             <motion.div key="detail" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
@@ -418,7 +426,7 @@ export default function Reports() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
-    </div>
+      </div>
+    </DACLayout>
   );
 }

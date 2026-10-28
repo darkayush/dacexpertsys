@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import NotificationBell from '../NotificationBell';
+import { scrollToElement } from '../../hooks/useLenis';
 
 export default function TopBar({
   onMobileMenuToggle,
@@ -13,6 +14,10 @@ export default function TopBar({
   const location = useLocation();
   const { currentUser, role, logout } = useAuth();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  // Pages with a case list filter in place via onSearchChange. Elsewhere the
+  // bar keeps its own text and Enter opens the role's case list with ?q=.
+  const [localSearch, setLocalSearch] = useState('');
+  const pageHandlesSearch = Boolean(onSearchChange);
 
   const displayName = currentUser?.name || currentUser?.displayName || currentUser?.email || 'Officer';
   const roleDisplay = (role || 'warden').replace(/_/g, ' ').toUpperCase();
@@ -20,6 +25,24 @@ export default function TopBar({
   const handleLogout = async () => {
     await logout();
     navigate('/');
+  };
+
+  const getCaseListLink = () => {
+    if (role === 'warden') return '/warden/cases';
+    if (role === 'chief_warden') return '/chief-warden/cases';
+    if (role === 'student') return '/student/cases';
+    return '/dashboard';
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    if (pageHandlesSearch) {
+      // Dashboards render their filtered table below the fold; bring it into view.
+      scrollToElement(document.getElementById('search-results'));
+      return;
+    }
+    const term = localSearch.trim();
+    if (term) navigate(`${getCaseListLink()}?q=${encodeURIComponent(term)}`);
   };
 
   const getPrimaryRegisterLink = () => {
@@ -67,8 +90,9 @@ export default function TopBar({
         </span>
         <input
           type="text"
-          value={searchValue}
-          onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
+          value={pageHandlesSearch ? searchValue : localSearch}
+          onChange={(e) => (pageHandlesSearch ? onSearchChange(e.target.value) : setLocalSearch(e.target.value))}
+          onKeyDown={handleSearchKeyDown}
           placeholder="Search cases, students or commands..."
           className="w-full pl-10 pr-12 py-2 sm:py-2.5 bg-white border border-slate-200/80 rounded-full text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#5c54eb] focus:ring-4 focus:ring-purple-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all"
         />

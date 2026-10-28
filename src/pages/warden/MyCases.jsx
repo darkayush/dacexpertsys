@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import DACLayout from '../../components/layout/DACLayout';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -24,7 +24,8 @@ function formatDate(value) {
 export default function MyCases() {
   const navigate = useNavigate();
   const hasLoggedResponseRef = useRef(false);
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [statusFilter, setStatusFilter] = useState('All');
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);

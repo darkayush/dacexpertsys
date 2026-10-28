@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import NotificationBell from '../NotificationBell';
@@ -8,6 +8,7 @@ export default function TopBar({
   onMobileMenuToggle,
   searchValue = '',
   onSearchChange,
+  searchResults,
   primaryAction,
 }) {
   const navigate = useNavigate();
@@ -18,6 +19,27 @@ export default function TopBar({
   // bar keeps its own text and Enter opens the role's case list with ?q=.
   const [localSearch, setLocalSearch] = useState('');
   const pageHandlesSearch = Boolean(onSearchChange);
+  // Pages that pass searchResults get a results dropdown under the bar.
+  const hasDropdown = pageHandlesSearch && Array.isArray(searchResults);
+  const [dropdownOpen, setDropdownOpen] = useState(() => Boolean(searchValue));
+  const [highlight, setHighlight] = useState(0);
+  const searchBoxRef = useRef(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return undefined;
+    const close = (e) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [dropdownOpen]);
+
+  const showDropdown = hasDropdown && dropdownOpen && searchValue.trim().length > 0;
+
+  const openResult = (result) => {
+    setDropdownOpen(false);
+    navigate(result.to);
+  };
 
   const displayName = currentUser?.name || currentUser?.displayName || currentUser?.email || 'Officer';
   const roleDisplay = (role || 'warden').replace(/_/g, ' ').toUpperCase();
@@ -35,6 +57,20 @@ export default function TopBar({
   };
 
   const handleSearchKeyDown = (e) => {
+    if (hasDropdown) {
+      if (e.key === 'Escape') setDropdownOpen(false);
+      else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setDropdownOpen(true);
+        setHighlight((h) => Math.min(h + 1, Math.max(searchResults.length - 1, 0)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlight((h) => Math.max(h - 1, 0));
+      } else if (e.key === 'Enter' && searchResults[highlight]) {
+        openResult(searchResults[highlight]);
+      }
+      return;
+    }
     if (e.key !== 'Enter') return;
     if (pageHandlesSearch) {
       // Dashboards render their filtered table below the fold; bring it into view.
@@ -84,21 +120,64 @@ export default function TopBar({
       </div>
 
       {/* Center: Large Global Command Search Bar */}
-      <div className="w-full md:max-w-md lg:max-w-lg relative">
+      <div ref={searchBoxRef} className="w-full md:max-w-md lg:max-w-lg relative">
         <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
           search
         </span>
         <input
           type="text"
           value={pageHandlesSearch ? searchValue : localSearch}
-          onChange={(e) => (pageHandlesSearch ? onSearchChange(e.target.value) : setLocalSearch(e.target.value))}
+          onChange={(e) => {
+            if (pageHandlesSearch) {
+              onSearchChange(e.target.value);
+              setDropdownOpen(true);
+              setHighlight(0);
+            } else {
+              setLocalSearch(e.target.value);
+            }
+          }}
+          onFocus={() => setDropdownOpen(true)}
           onKeyDown={handleSearchKeyDown}
+          role={hasDropdown ? 'combobox' : undefined}
+          aria-expanded={hasDropdown ? showDropdown : undefined}
+          aria-controls={hasDropdown ? 'topbar-search-results' : undefined}
           placeholder="Search cases, students or commands..."
           className="w-full pl-10 pr-12 py-2 sm:py-2.5 bg-white border border-slate-200/80 rounded-full text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#5c54eb] focus:ring-4 focus:ring-purple-100 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all"
         />
         <kbd className="hidden sm:inline-flex items-center absolute right-3.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-400">
           ⌘K
         </kbd>
+
+        {showDropdown && (
+          <div
+            id="topbar-search-results"
+            role="listbox"
+            className="absolute left-0 right-0 top-full mt-2 z-50 bg-white border border-slate-200 rounded-2xl shadow-[0_12px_32px_rgba(15,23,42,0.08)] overflow-hidden"
+          >
+            {searchResults.length === 0 ? (
+              <p className="px-4 py-3 text-xs text-slate-500">No matching cases</p>
+            ) : (
+              <ul className="py-1 max-h-[360px] overflow-y-auto">
+                {searchResults.map((result, idx) => (
+                  <li key={result.key} role="option" aria-selected={idx === highlight}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setHighlight(idx)}
+                      onClick={() => openResult(result)}
+                      className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 ${idx === highlight ? 'bg-slate-50' : ''}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold text-slate-900 truncate">{result.title}</span>
+                        <span className="block text-[11px] text-slate-500 truncate">{result.subtitle}</span>
+                      </span>
+                      {result.meta && <span className="shrink-0 text-[11px] text-slate-500">{result.meta}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right Controls: Notifications, Action Button & Profile */}

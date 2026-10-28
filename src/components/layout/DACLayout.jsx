@@ -6,6 +6,7 @@ export default function DACLayout({
   children,
   searchValue = '',
   onSearchChange,
+  searchResults,
   primaryAction,
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -25,6 +26,7 @@ export default function DACLayout({
           onMobileMenuToggle={() => setMobileMenuOpen(true)}
           searchValue={searchValue}
           onSearchChange={onSearchChange}
+          searchResults={searchResults}
           primaryAction={primaryAction}
         />
 

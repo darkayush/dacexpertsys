@@ -11,13 +11,11 @@ const NAV_ITEMS = {
     { to: '/admin-settings/users', label: 'User Directory', icon: 'group' },
     { to: '/admin-settings/rules-weights', label: 'Rules & Policies', icon: 'description' },
     { to: '/admin-settings/system', label: 'System Config', icon: 'tune' },
-    { to: '/reports', label: 'Reports', icon: 'bar_chart' },
     { to: '/settings', label: 'Settings', icon: 'settings' },
   ],
   dsw: [
     { to: '/dsw-dashboard', label: 'Dashboard', icon: 'home' },
     { to: '/dashboard', label: 'Case Roster', icon: 'folder_open' },
-    { to: '/reports', label: 'Reports', icon: 'bar_chart' },
     { to: '/settings', label: 'Settings', icon: 'settings' },
   ],
   chief_warden: [

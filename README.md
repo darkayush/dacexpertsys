@@ -7,7 +7,7 @@ A web application for **BML Munjal University** that manages student disciplinar
 - **Student profiles** with complete DAC case history and penalty points.
 - **Group incidents**: one registration for several students creates a separate case per student, each with its own alcohol reading.
 - **Hindi → English voice input** for the incident description (browser speech recognition + Groq translation).
-- **AI penalty recommendations** (Groq) for cases at the final committee stage, grounded in the official DAC and Unfair Means policies.
+- **AI penalty recommendations** (Groq) on the case page for the Admin's final decision, generated on request and grounded in the official DAC and Unfair Means policies.
 - **DAC meetings**: the Admin schedules an in-person meeting; the student sees it on their dashboard and gets an email.
 - **Automatic emails** (Gmail SMTP) for meetings and for DAC points imposed by the Admin.
 - **Private evidence storage** in Supabase Storage with short-lived signed links.
@@ -115,7 +115,6 @@ A web application for **BML Munjal University** that manages student disciplinar
         ├── CaseDetail.jsx     # Case page: stepper, details, evidence, timeline, workflow, warning, group, DAC meeting
         ├── StudentProfile.jsx # Staff view of one student's DAC history
         ├── Notifications.jsx, Profile.jsx, Settings.jsx (change password)
-        ├── Reports.jsx        # AI Case Recommendations (Groq) for cases forwarded by the DSW, with search
         ├── AdminSettings.jsx  # Shell for admin/* nested routes
         ├── admin/             # UserManagement, SystemConfig (policy view), RulesWeights, EmailTest
         ├── student/           # StudentDashboard (with DAC meeting card), StudentPolicy (both PDFs)
@@ -187,8 +186,8 @@ The official policies are transcribed in `backend/config/dacPolicy.js` and serve
 | student | `/student/dashboard` | `/student/cases`, `/student/cases/:id`, `/student/profile`, `/student/disciplinary-policy` |
 | warden | `/warden/dashboard` | `/warden/register`, `/warden/cases`, `/warden/cases/:id`, `/warden/notifications`, `/warden/profile` |
 | chief_warden | `/chief-warden/dashboard` | `/chief-warden/register`, `/chief-warden/cases`, `/chief-warden/cases/:id`, `/chief-warden/notifications`, `/chief-warden/profile` |
-| dsw | `/dsw-dashboard` | `/dashboard`, `/reports`, `/cases/:id` |
-| admin | `/dashboard` | `/reports`, `/cases/:id`, `/admin-settings/{users,rules-weights,system,email-test}` |
+| dsw | `/dsw-dashboard` | `/dashboard`, `/cases/:id` |
+| admin | `/dashboard` | `/cases/:id`, `/admin-settings/{users,rules-weights,system,email-test}` |
 | staff (all except student) | — | `/students/:enrollmentNo` (student profile) |
 
 DSW and Admin cannot register cases. In Admin Settings, **Rules & Policies** (`rules-weights`) shows the official policy and **System Config** (`system`) manages the rules and weights. The Email Test page has no sidebar link; open `/admin-settings/email-test` directly.

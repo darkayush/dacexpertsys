@@ -11,7 +11,6 @@ import DACLayout from './components/layout/DACLayout.jsx';
 
 // Pages load on first visit, so the login screen does not wait for every page's code.
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
-const Reports = lazy(() => import('./pages/Reports.jsx'));
 const AdminSettings = lazy(() => import('./pages/AdminSettings.jsx'));
 const RulesWeights = lazy(() => import('./pages/admin/RulesWeights.jsx'));
 const UserManagement = lazy(() => import('./pages/admin/UserManagement.jsx'));
@@ -77,7 +76,6 @@ function AnimatedRoutes() {
         {/* Admin & DSW */}
         <Route path="/dashboard" element={<ProtectedRoute roles={['admin', 'dsw']}><Dashboard /></ProtectedRoute>} />
         <Route path="/dsw-dashboard" element={<ProtectedRoute roles={['dsw']}><Dashboard /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute roles={['admin', 'dsw']}><Reports /></ProtectedRoute>} />
         <Route path="/cases/:id" element={<ProtectedRoute roles={['admin', 'dsw']}><CaseDetail /></ProtectedRoute>} />
         <Route path="/view-case/:id" element={<ProtectedRoute roles={['admin', 'dsw']}><CaseDetail /></ProtectedRoute>} />
         <Route path="/students/:enrollmentNo" element={<ProtectedRoute roles={['admin', 'dsw', 'warden', 'chief_warden']}><StudentProfile /></ProtectedRoute>} />

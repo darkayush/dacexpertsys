@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import DACLayout from '../components/layout/DACLayout';
+import AiRecommendationCard from '../components/cases/AiRecommendationCard';
+import { scrollToElement } from '../hooks/useLenis';
 import { Avatar, Button, Card, EmptyState, Icon, SeverityPill, StatusText } from '../components/cases/parts';
 import StudentProfileLink from '../components/cases/StudentProfileLink';
 import { caseLink, formatDate, formatDateTime, fmtNumber, safeReturnPath, statusLabel, toTitleCase } from '../components/cases/caseUi';
@@ -70,10 +72,10 @@ function Stepper({ status }) {
   );
 }
 
-function AdminDecision({ caseItem, busy, onSubmit }) {
-  const [points, setPoints] = useState(caseItem.penalty_points ?? 0);
-  const [fine, setFine] = useState(Number(caseItem.fine ?? 0));
-  const [decision, setDecision] = useState('');
+function AdminDecision({ caseItem, busy, onSubmit, initial = null }) {
+  const [points, setPoints] = useState(initial?.penalty_points ?? caseItem.penalty_points ?? 0);
+  const [fine, setFine] = useState(Number(initial?.fine ?? caseItem.fine ?? 0));
+  const [decision, setDecision] = useState(initial?.decision ?? '');
   const input = 'w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#3d3793] focus:ring-4 focus:ring-indigo-100';
 
   return (
@@ -272,6 +274,18 @@ export default function CaseDetail() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
+  // Values from the AI recommendation copied into the decision form; version re-mounts the form.
+  const [prefill, setPrefill] = useState({ caseId: null, values: null, version: 0 });
+  const decisionRef = useRef(null);
+
+  const applyRecommendation = (values) => {
+    setPrefill((prev) => ({ caseId: caseItem?.id, values, version: prev.version + 1 }));
+    // Wait for the form to re-render, then bring it into view.
+    requestAnimationFrame(() => {
+      scrollToElement(decisionRef.current);
+      decisionRef.current?.querySelector('textarea')?.focus({ preventScroll: true });
+    });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -322,6 +336,8 @@ export default function CaseDetail() {
   const status = String(caseItem?.status || '').toLowerCase();
   const assigned = String(caseItem?.assigned_to_role || '').toLowerCase();
   const canAct = Boolean(caseItem) && status !== 'resolved' && assigned === role;
+  // Only use AI-filled values for the case they were generated for.
+  const decisionPrefill = prefill.caseId === caseItem?.id ? prefill.values : null;
 
   // Storage links expire after 10 minutes, so fetch a fresh one on every click. The tab is
   // opened synchronously first; opening it after the await would be blocked as a popup.
@@ -434,6 +450,10 @@ export default function CaseDetail() {
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
               <div className="xl:col-span-8 space-y-6">
+                {canAct && role === 'admin' && (
+                  <AiRecommendationCard key={caseItem.id} caseId={caseItem.id} onApply={applyRecommendation} />
+                )}
+
                 <Card title="Incident Details" icon="report">
                   <dl className="px-6 pb-6 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
                     <Field label="Offence">{toTitleCase(caseItem.offense_type)}</Field>
@@ -611,9 +631,14 @@ export default function CaseDetail() {
                     )}
 
                     {canAct && role === 'admin' && (
-                      <>
+                      <div ref={decisionRef} className="space-y-4">
                         <p className="text-sm text-slate-600">Record the final decision to close this case.</p>
+                        {decisionPrefill && (
+                          <p className="text-xs text-[#3d3793]">Filled in from the AI recommendation. Review and edit before resolving.</p>
+                        )}
                         <AdminDecision
+                          key={prefill.version}
+                          initial={decisionPrefill}
                           caseItem={caseItem}
                           busy={busy}
                           onSubmit={(values) =>
@@ -629,7 +654,7 @@ export default function CaseDetail() {
                           }
                         />
                         {warningButton}
-                      </>
+                      </div>
                     )}
                   </div>
                 </Card>

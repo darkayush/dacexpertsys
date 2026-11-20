@@ -197,8 +197,9 @@ export async function getMyMeetings() {
 }
 
 /** AI penalty recommendation for one case (Groq). Advisory only; nothing is saved. */
-export async function getCaseRecommendation(caseId) {
-  return fetchJson(`/api/cases/${caseId}/recommendation`, { method: 'POST' });
+export async function getCaseRecommendation(caseId, { refresh = false } = {}) {
+  const query = refresh ? '?refresh=1' : '';
+  return fetchJson(`/api/cases/${caseId}/recommendation${query}`, { method: 'POST' });
 }
 
 export async function warnCase(caseId, note = '') {

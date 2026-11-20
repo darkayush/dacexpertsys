@@ -139,7 +139,7 @@ router.get('/:id/meetings', requireRoles('chief_warden', 'dsw', 'admin', 'studen
   }
 });
 
-// AI penalty recommendation (Groq), generated on demand from the Reports page. Advisory; nothing is saved.
+// AI penalty recommendation (Groq), generated on demand from the case page. Advisory; nothing is saved.
 router.post('/:id/recommendation', requireRoles('chief_warden', 'dsw', 'admin'), async (req, res) => {
   const caseId = Number(req.params.id);
   if (!Number.isInteger(caseId) || caseId <= 0) {
@@ -149,11 +149,16 @@ router.post('/:id/recommendation', requireRoles('chief_warden', 'dsw', 'admin'),
     return res.status(503).json({ error: 'AI recommendations are not configured. Set GROQ_API_KEY in .env.' });
   }
   try {
-    const recommendation = await generateCaseRecommendationService(caseId);
+    // ?refresh=1 (Regenerate) asks for a new recommendation instead of a recent one.
+    const refresh = ['1', 'true'].includes(String(req.query?.refresh || req.body?.refresh || '').toLowerCase());
+    const recommendation = await generateCaseRecommendationService(caseId, { refresh });
     if (!recommendation) return res.status(404).json({ error: 'Case not found' });
     return res.status(200).json(recommendation);
   } catch (error) {
     if (error?.status === 409) return res.status(409).json({ error: error.message });
+    if (error?.status === 429) {
+      return res.status(503).json({ error: 'The AI service is busy right now (rate limit). Please try again in a minute.' });
+    }
     console.error('Recommendation error:', error?.message || error);
     return res.status(502).json({ error: 'Could not generate the AI recommendation. Please try again.' });
   }

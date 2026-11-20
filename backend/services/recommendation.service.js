@@ -2,7 +2,7 @@ import pool from '../config/db.js';
 import { DAC_POLICY, UNFAIR_MEANS_POLICY } from '../config/dacPolicy.js';
 import { groqGenerate, isGroqConfigured } from './groqService.js';
 
-// AI penalty recommendation for one case (Reports page → "View Recommendation").
+// AI penalty recommendation for one case (case page → "Generate recommendation").
 // Groq reads the case, the student's earlier cases, the official policies and the admin's
 // rules & weights, and suggests a DAC level, points, fine and reasoning. Advisory only:
 // nothing is saved and the case is not changed.
@@ -126,8 +126,19 @@ function normalise(raw) {
   };
 }
 
-/** Returns null when the case does not exist. */
-export async function generateCaseRecommendationService(caseId) {
+// Recent recommendations per case. Two requests for the same case at once (e.g. two admins
+// or two browser tabs) share one Groq call, and a
+// result is reused for a few minutes while the case is unchanged. Groq's free tier allows
+// only about one recommendation per few seconds, so this avoids needless 429 errors.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 200;
+const recommendationCache = new Map(); // caseId -> { key, promise, settled, at }
+
+/**
+ * Returns null when the case does not exist.
+ * refresh: true generates a new recommendation instead of reusing a recent one.
+ */
+export async function generateCaseRecommendationService(caseId, { refresh = false } = {}) {
   const caseResult = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
   const target = caseResult.rows[0];
   if (!target) return null;
@@ -138,6 +149,38 @@ export async function generateCaseRecommendationService(caseId) {
     throw error;
   }
 
+  // Any edit to the case row changes the key, so a stale recommendation is never reused.
+  const key = JSON.stringify(target);
+  const cached = recommendationCache.get(caseId);
+  if (cached && cached.key === key) {
+    const inFlight = !cached.settled;
+    const fresh = Date.now() - cached.at < CACHE_TTL_MS;
+    // An in-flight call is always shared, even on refresh, so it is never sent twice.
+    if (inFlight || (fresh && !refresh)) return cached.promise;
+  }
+
+  const entry = { key, settled: false, at: Date.now() };
+  entry.promise = buildRecommendation(target).then(
+    (result) => {
+      entry.settled = true;
+      entry.at = Date.now();
+      return result;
+    },
+    (error) => {
+      // Failures are not cached: the next request tries again.
+      if (recommendationCache.get(caseId) === entry) recommendationCache.delete(caseId);
+      throw error;
+    },
+  );
+  recommendationCache.delete(caseId);
+  recommendationCache.set(caseId, entry);
+  if (recommendationCache.size > CACHE_MAX_ENTRIES) {
+    recommendationCache.delete(recommendationCache.keys().next().value);
+  }
+  return entry.promise;
+}
+
+async function buildRecommendation(target) {
   const [historyResult, rulesResult] = await Promise.all([
     pool.query(
       `SELECT id, offense_type, severity, penalty_points, status, resolution_type, incident_date, created_at

@@ -109,6 +109,27 @@ export async function ensureWorkflowSchema() {
     )`,
     'CREATE INDEX IF NOT EXISTS case_meetings_case_id_idx ON case_meetings(case_id)',
     'CREATE INDEX IF NOT EXISTS case_meetings_student_idx ON case_meetings(student_id, scheduled_at)',
+    // Demo fine payments (no real gateway); one SUCCESS payment per case.
+    `CREATE TABLE IF NOT EXISTS case_payments (
+      id SERIAL PRIMARY KEY,
+      -- RESTRICT: payment records are financial history and must outlive edits; a paid case or
+      -- its student cannot be deleted while payments reference them.
+      student_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      case_id INT NOT NULL REFERENCES cases(id) ON DELETE RESTRICT,
+      transaction_id TEXT NOT NULL UNIQUE,
+      -- Sent by the client once per checkout so a retried request never creates a second payment.
+      idempotency_key TEXT UNIQUE,
+      amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+      currency CHAR(3) NOT NULL DEFAULT 'INR',
+      payment_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (payment_status IN ('PENDING', 'SUCCESS', 'FAILED')),
+      -- Only simulated payments exist; no real gateway is integrated.
+      payment_type TEXT NOT NULL DEFAULT 'DEMO' CHECK (payment_type = 'DEMO'),
+      payment_date TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS case_payments_one_success_per_case_idx ON case_payments(case_id) WHERE payment_status = 'SUCCESS'",
+    "CREATE INDEX IF NOT EXISTS case_payments_student_idx ON case_payments(student_id, created_at DESC)",
     'ALTER TABLE cases ADD COLUMN IF NOT EXISTS created_by_role user_role',
     'ALTER TABLE cases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()',
     'ALTER TABLE case_timeline ADD COLUMN IF NOT EXISTS external_case_id TEXT',

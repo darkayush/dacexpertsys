@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import DACLayout from '../components/layout/DACLayout';
 import CasesTable from '../components/cases/CasesTable';
 import { Donut, TrendChart } from '../components/cases/charts';
@@ -12,9 +12,7 @@ import {
   fmtNumber,
   formatDate,
   mapCase,
-  searchStudents,
   statusLabel,
-  studentProfilePath,
 } from '../components/cases/caseUi';
 import { useAuth } from '../context/AuthContext';
 import { usePagedCases } from '../hooks/usePagedCases';
@@ -59,8 +57,6 @@ function greeting() {
  */
 export default function Dashboard() {
   const { role, currentUser } = useAuth();
-  const [searchParams] = useSearchParams();
-  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [filter, setFilter] = useState('all');
   const [trendRange, setTrendRange] = useState('30d');
   const [summary, setSummary] = useState(null);
@@ -89,7 +85,6 @@ export default function Dashboard() {
     ? `Cases from the Last ${tableDays} Days`
     : isWarden ? 'Cases You Registered' : 'All Cases';
   const table = usePagedCases({ query: tableQuery, filter, pageSize: 5 });
-  const searchHits = usePagedCases({ query: scopeQuery, search, pageSize: 20, enabled: Boolean(search.trim()) });
 
   const loading = summaryLoading;
   const error = summaryError || table.error;
@@ -112,30 +107,6 @@ export default function Dashboard() {
   );
   const trendTotal = trend.reduce((sum, p) => sum + p.value, 0);
 
-  const searchResults = useMemo(() => {
-    if (!search.trim()) return [];
-    const cases = searchHits.rows;
-    const studentResults = searchStudents(cases, search).map((c) => ({
-      key: `student-${c.enrollment}`,
-      title: c.student,
-      subtitle: `Enrollment ${c.enrollment}`,
-      meta: 'View Profile →',
-      metaClassName: 'font-semibold text-[#3d3793]',
-      leading: <Avatar name={c.student} seed={Number(c.enrollment) || 0} size="h-8 w-8" />,
-      to: studentProfilePath(c.enrollment),
-    }));
-    // The server already matched the search text; show the first 8 cases.
-    const caseResults = cases
-      .slice(0, 8)
-      .map((c) => ({
-        key: c.id,
-        title: `${c.caseId} · ${c.student}`,
-        subtitle: [c.enrollment, c.offense].filter(Boolean).join(' · '),
-        meta: statusLabel(c.status),
-        to: caseLink(role, c.id),
-      }));
-    return [...studentResults, ...caseResults];
-  }, [searchHits.rows, search, role]);
 
   const statCards = [
     {
@@ -179,7 +150,7 @@ export default function Dashboard() {
   const displayName = currentUser?.name?.split(' ')[0] || roleName;
 
   return (
-    <DACLayout searchValue={search} onSearchChange={setSearch} searchResults={searchResults}>
+    <DACLayout>
       <div className="max-w-[1400px] mx-auto space-y-6">
         <div className="border-l-4 border-[#3d3793] pl-4">
           <h1 className="text-2xl sm:text-[28px] text-slate-900 tracking-tight">

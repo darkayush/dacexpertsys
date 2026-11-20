@@ -30,6 +30,34 @@ export async function getAllUsersService({ excludeRole } = {}) {
   return result.rows;
 }
 
+/**
+ * Students matching a search term by name, enrollment number or email (global header search).
+ * Staff only (enforced by the caller). Exact enrollment matches first, then name prefixes.
+ * `pattern` is an escaped ILIKE "contains" pattern (see likeContains in cases.service.js).
+ */
+export async function searchStudentsService({ term, pattern, limit = 5 }) {
+  const result = await pool.query(
+    `
+    SELECT
+      u.id,
+      u.name,
+      u.enrollment_no,
+      u.email,
+      u.program,
+      u.hostel,
+      (SELECT COUNT(*)::int FROM cases c WHERE c.student_id = u.id) AS case_count
+    FROM users u
+    WHERE u.role = 'student'
+      AND u.enrollment_no IS NOT NULL
+      AND (u.name ILIKE $1 OR u.enrollment_no ILIKE $1 OR u.email ILIKE $1)
+    ORDER BY (u.enrollment_no = $2) DESC, (LOWER(u.name) LIKE (LOWER($2) || '%')) DESC, u.name ASC
+    LIMIT $3
+  `,
+    [pattern, term, limit],
+  );
+  return result.rows;
+}
+
 export async function getUserByIdService(userId) {
   const result = await pool.query(
     `

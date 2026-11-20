@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DACLayout from '../../components/layout/DACLayout';
 import CasesTable from '../../components/cases/CasesTable';
+import PaymentHistoryCard from '../../components/payments/PaymentHistoryCard';
 import { Card, Icon } from '../../components/cases/parts';
 import { ACTIVE_STATUSES, fmtNumber, mapCase } from '../../components/cases/caseUi';
 import { useAuth } from '../../context/AuthContext';
@@ -145,6 +146,8 @@ export default function StudentDashboard() {
         </div>
 
         <CasesTable cases={cases} loading={loading} role="student" title="My Cases" pageSize={5} showStudent={false} />
+
+        <PaymentHistoryCard />
       </div>
     </DACLayout>
   );

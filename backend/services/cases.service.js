@@ -186,6 +186,67 @@ export async function getCasesPageService({ filter = 'all', q = '', page = 0, pa
   return { rows: rowsResult.rows, total: countResult.rows[0]?.total || 0 };
 }
 
+// ── Global header search ────────────────────────────────────────────────────
+// Both queries use buildCaseScope, so search shows exactly the cases the requester may see
+// in the case lists (students: their own; DSW: from their stage on; others: all).
+
+// Matches user text literally inside ILIKE (escapes %, _ and \).
+export function likeContains(term) {
+  return `%${String(term).replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/**
+ * Cases matching a search term (case ID, offence, student name or enrollment number),
+ * or every visible case with one exact offence when `offence` is given.
+ */
+export async function searchCasesService({ requesterRole, requesterId, q = '', offence = null, limit = 6 }) {
+  const { conditions, values } = buildCaseScope({ requesterRole, requesterId });
+  let exactIdParam = 'NULL';
+
+  if (offence) {
+    values.push(offence);
+    conditions.push(`LOWER(cases.offense_type) = LOWER($${values.length})`);
+  } else {
+    values.push(likeContains(q));
+    const p = `$${values.length}`;
+    conditions.push(
+      `(cases.external_case_id ILIKE ${p} OR cases.offense_type ILIKE ${p} OR users.name ILIKE ${p} OR users.enrollment_no ILIKE ${p})`
+    );
+    values.push(String(q));
+    exactIdParam = `$${values.length}`;
+  }
+  values.push(limit);
+
+  const result = await pool.query(
+    `${CASE_LIST_SELECT} ${whereSql(conditions)}
+     ORDER BY (UPPER(cases.external_case_id) = UPPER(${exactIdParam})) DESC NULLS LAST,
+              cases.incident_date DESC NULLS LAST, cases.created_at DESC, cases.id DESC
+     LIMIT $${values.length}`,
+    values,
+  );
+  return result.rows;
+}
+
+/** Distinct offence types matching a term among the requester's visible cases, with counts. */
+export async function searchOffencesService({ requesterRole, requesterId, q, limit = 5 }) {
+  const { conditions, values } = buildCaseScope({ requesterRole, requesterId });
+  values.push(likeContains(q));
+  conditions.push(`cases.offense_type ILIKE $${values.length}`);
+  values.push(limit);
+
+  const result = await pool.query(
+    `SELECT MIN(cases.offense_type) AS offense_type, COUNT(*)::int AS case_count
+     FROM cases
+     JOIN users ON users.id = cases.student_id
+     ${whereSql(conditions)}
+     GROUP BY LOWER(cases.offense_type)
+     ORDER BY case_count DESC, offense_type ASC
+     LIMIT $${values.length}`,
+    values,
+  );
+  return result.rows;
+}
+
 // Dashboard numbers computed in SQL: counts per status, high/critical count,
 // daily counts for the trend chart (last ~13 months) and the side-panel queue.
 export async function getCasesSummaryService(scope) {

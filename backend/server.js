@@ -15,6 +15,8 @@ import rulesRoutes from './routes/rules.routes.js';
 import chatbotRoutes from './routes/chatbot.routes.js';
 import emailRoutes from './routes/email.routes.js';
 import translateRoutes from './routes/translate.routes.js';
+import paymentsRoutes from './routes/payments.routes.js';
+import searchRoutes from './routes/search.routes.js';
 import { verifyToken } from './middleware/auth.middleware.js';
 
 const app = express();
@@ -99,6 +101,8 @@ app.use('/api/chat', verifyToken, chatbotRoutes);
 app.use('/api/policies', verifyToken, policiesRoutes);
 app.use('/api/email', verifyToken, emailRoutes);
 app.use('/api/translate', verifyToken, translateRoutes);
+app.use('/api/payments', verifyToken, paymentsRoutes);
+app.use('/api/search', verifyToken, searchRoutes);
 
 async function startServer() {
   try {

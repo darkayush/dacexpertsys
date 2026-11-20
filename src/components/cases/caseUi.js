@@ -110,18 +110,6 @@ export function searchCases(cases, query) {
   return cases.filter((c) => [c.student, c.enrollment, c.caseId, c.offense].some((v) => v.toLowerCase().includes(q)));
 }
 
-// Students whose name or enrollment number matches the query, one entry per student.
-export function searchStudents(cases, query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const byEnrollment = new Map();
-  cases.forEach((c) => {
-    if (!c.enrollment || byEnrollment.has(c.enrollment)) return;
-    if ([c.student, c.enrollment].some((v) => v.toLowerCase().includes(q))) byEnrollment.set(c.enrollment, c);
-  });
-  return [...byEnrollment.values()];
-}
-
 // Page buttons like 1 2 3 … 245, keeping the current page visible.
 export function pageList(page, totalPages) {
   const pages = new Set([0, 1, 2, page - 1, page, page + 1, totalPages - 1]);

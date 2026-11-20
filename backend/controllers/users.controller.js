@@ -167,6 +167,10 @@ export async function deleteUserController(req, res) {
 
     return res.status(200).json({ message: 'User deleted successfully', user: deletedUser });
   } catch (error) {
+    // Payment records (case_payments) are kept as history and block deleting the student.
+    if (error?.code === '23503' && error?.table === 'case_payments') {
+      return res.status(409).json({ error: 'This user has recorded fine payments and cannot be deleted.' });
+    }
     console.error('Error deleting user:', error);
     return res.status(500).json({ error: 'Failed to delete user' });
   }

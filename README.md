@@ -11,7 +11,9 @@ A web application for **BML Munjal University** that manages student disciplinar
 - **DAC meetings**: the Admin schedules an in-person meeting; the student sees it on their dashboard and gets an email.
 - **Automatic emails** (Gmail SMTP) for meetings and for DAC points imposed by the Admin.
 - **Private evidence storage** in Supabase Storage with short-lived signed links.
+- **Demo fine payments**: on a resolved case with a fine, the student pays from a Payment panel below the Workflow panel (checkout, processing and success screens) and gets a server-generated PDF receipt. **No real gateway and no real money**: the student screens show a normal payment flow, but every payment is stored with `payment_type = 'DEMO'` and the PDF receipt is marked as a demonstration.
 - In-app **notifications** and a **case timeline** (audit trail).
+- **Global search** in the top bar on every page (Ctrl/⌘ + K): students (name, enrollment number, email), cases (case ID, offence, student) and offences, scoped to the user's role. Choosing a result opens that record; opening or closing search never changes the page.
 - A **DAC Assistant chatbot**. It uses RAG over DAC policy documents and case records with PostgreSQL + pgvector + Google Gemini, and falls back to a rule-based answer when Gemini is not configured.
 
 ---
@@ -105,7 +107,7 @@ A web application for **BML Munjal University** that manages student disciplinar
     │   ├── DacChatbot.jsx     # Floating DAC Assistant panel (staff only)
     │   ├── LogoCirclesBackground.jsx # Login background: drifting SVG circles in the BMU logo colours
     │   ├── NotificationBell.jsx # Top-bar bell, polls every 30 s
-    │   ├── layout/            # DACLayout (sidebar per role, top bar, search), SearchBox
+    │   ├── layout/            # DACLayout (sidebar per role, top bar), GlobalSearch (header search on every page)
     │   ├── cases/             # CasesTable, charts (TrendChart, Donut), parts (Card, Icon, Avatar…),
     │   │                      # caseUi.js (labels, mapping, filters, links), trend.js, StudentProfileLink
     │   └── ui/                # StudentCard, StatusBadge, EmptyState (SeverityBadge is unused)
@@ -225,6 +227,10 @@ Base URL: `http://localhost:5001` in development (macOS uses port 5000 for AirPl
 | `POST /api/cases/:id/meetings` | admin | Schedule a DAC meeting `{ scheduled_at, location, notes? }` (only for `pending_admin`) |
 | `GET /api/cases/:id/meetings` | staff, owning student | Meetings for a case |
 | `GET /api/cases/meetings/mine` | student | The student's own meetings |
+| `GET /api/payments/cases/:id` | student (own case), staff | Payment panel state: `{ case_ref, amount, currency, eligible, reason, payment }` |
+| `POST /api/payments/cases/:id` | student (own case) | Confirm a **demo** payment `{ idempotency_key }` → `{ payment, replayed }` (201 new, 200 replay of the same checkout). 409 when not resolved, no fine, or already paid |
+| `GET /api/payments/mine` | student | Own payment history |
+| `GET /api/payments/:transactionId/receipt[?download=1]` | owning student, staff | PDF receipt built from the stored payment |
 | `PUT /api/cases/:id` | admin, or the owning warden while `pending_chief` | Update fields (incl. `fine`, `decision`) |
 | `DELETE /api/cases/:id` | admin | Delete case |
 | `PUT /api/cases/:id/approve` | assigned reviewer | Advance the workflow |
@@ -242,6 +248,7 @@ Base URL: `http://localhost:5001` in development (macOS uses port 5000 for AirPl
 | `GET /api/policies/dac` | any | Official policies from the PDFs: `{ dac, unfairMeans }` |
 | `POST /api/translate/hi-en` | warden, chief_warden | `{ text }` (max 6,000 chars) → `{ translation }` (Groq, Gemini as fallback) |
 | `POST /api/email/test` | admin | Sends a test email to `EMAIL_TEST_TO` |
+| `GET /api/search?q=` | any (scoped) | Global search → `{ students, cases, offences }`. At least 2 characters (max 100); case-insensitive partial matches; up to 5 students, 6 cases, 5 offences. Students and offences are returned to staff only; cases follow the same visibility as the case lists. `?offence=<name>` lists that offence's cases |
 | `POST /api/chat` | any | `{ message, conversationId? }` → `{ answer, intent, showCases, cases, sources, suggestedQuestions }` |
 
 ---
@@ -281,9 +288,10 @@ npm run rag:ingest
 `database/schema.sql` creates:
 
 - **Enums**: `user_role`, `case_status` (`pending_chief`, `pending_dsw`, `pending_admin`, `resolved`), `case_severity` (`low`, `medium`, `high`, `critical`), `program_type` (`btech`, `bba`, `mba`, `ballb`, `bcom`).
-- **Tables**: `users`, `cases`, `case_timeline`, `rules`, `evidence`, `notifications`, `rag_documents`, `case_meetings`.
+- **Tables**: `users`, `cases`, `case_timeline`, `rules`, `evidence`, `notifications`, `rag_documents`, `case_meetings`, `case_payments`.
 - **Newer columns**: `cases.resolution_type` (`'warning'` when closed with a warning), `cases.incident_group_id`.
 - **Indexes** for the dashboard and case page: `cases(created_by)`, `cases(incident_group_id)`, `case_timeline(case_id)`, `evidence(case_id)`, `notifications(user_id, created_at)`, `case_meetings(case_id)`, `case_meetings(student_id, scheduled_at)`.
+- **`case_payments`** (demo fine payments): FKs to `users` and `cases` with `ON DELETE RESTRICT` (a paid case or its student cannot be deleted), unique `transaction_id` (`TXN-YYYYMMDD-XXXXXXXX`; older `DEMO-…` ids are still accepted) and `idempotency_key`, CHECKs on amount, `payment_status` (`PENDING`/`SUCCESS`/`FAILED`) and `payment_type` (`DEMO` only), and a partial unique index allowing **one `SUCCESS` payment per case**. The amount is copied from `cases.fine` (the Admin's decision) at payment time.
 - **Optional**: `rag_documents.embedding vector(768)` and an HNSW index, created only when `pgvector` is installed.
 
 Student details (name, enrollment number, program, hostel, room, gender) live **only in `users`**. Cases reference them through `student_id`.
@@ -394,9 +402,11 @@ npm run preview                        # Serve the build
 npm run lint                           # ESLint
 node scripts/test-rag-queries.js       # Chatbot checks (needs seeded DB + ingested KB)
 node scripts/test-all-10-queries.js    # 10 reference chatbot questions
+node scripts/test-payments.js          # Demo payment checks; all writes are rolled back
+node scripts/test-search.js            # Global search checks (read-only)
 ```
 
-There is no unit-test runner. The two `test-*` scripts are integration checks against a live database.
+There is no unit-test runner. The `test-*` scripts are integration checks against a live database. `test-payments.js` runs every write inside a transaction that is rolled back, so it leaves no data behind.
 
 ---
 
@@ -420,6 +430,7 @@ These are current limitations, kept here so that contributors do not assume the 
 - **Legacy evidence is public.** Files uploaded before Supabase Storage remain in `backend/uploads/` and are served at `/uploads` without authentication. New uploads are private.
 - **Emails need real addresses and SMTP.** Without `SMTP_USER`/`SMTP_PASS`, or with placeholder student addresses, meetings and decisions are saved but no email arrives; the Admin sees the reason on the case page.
 - **AI output needs review.** Recommendations and translations come from an external model (Groq). Student names and enrollment numbers are not sent, but case descriptions are.
+- **Payments are a demo.** No payment gateway is integrated; a confirmed checkout is recorded as a successful `DEMO` transaction. Integrating a real gateway needs server-side payment verification before a row is marked `SUCCESS`.
 - **Chatbot memory** is in-process (a `Map`). It is lost on restart and is not shared across instances.
 - **Password rules.** The change-password UI says "at least 8 characters", but neither the frontend nor the backend enforces a minimum length.
 

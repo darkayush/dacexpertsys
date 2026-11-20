@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import NotificationBell from '../NotificationBell';
-import SearchBox from './SearchBox';
+import GlobalSearch from './GlobalSearch';
 import { toggleAssistant } from '../../lib/assistant';
 
 const NAV_ITEMS = {
@@ -50,12 +50,6 @@ const REGISTER_LINKS = {
 
 // Roles that get the top-bar "Ask AI" button. Only wardens and chief wardens register cases.
 const STAFF_ROLES = ['warden', 'chief_warden', 'dsw', 'admin'];
-
-const CASE_LIST_LINKS = {
-  warden: '/warden/cases',
-  chief_warden: '/chief-warden/cases',
-  student: '/student/cases',
-};
 
 function Sidebar({ role, onNavigate }) {
   const navigate = useNavigate();
@@ -196,20 +190,15 @@ function Sidebar({ role, onNavigate }) {
  * App shell for every signed-in page: dark role-aware sidebar and a top bar
  * with search, notifications, "Register Case" and "Ask AI" (staff only).
  *
- * Search: pages that filter in place pass `searchValue`/`onSearchChange`
- * (plus `searchResults` for a dropdown). Elsewhere Enter opens the role's
- * case list with ?q=.
+ * Search: the same global search (students, cases, offences) is available on every page and
+ * never changes the route by itself; see GlobalSearch. Pages that also filter a list in place
+ * (CaseList) pass `searchValue`/`onSearchChange` so the typed text drives their list too.
  */
-export default function DACLayout({ children, searchValue, onSearchChange, searchResults }) {
-  const navigate = useNavigate();
+export default function DACLayout({ children, searchValue, onSearchChange }) {
   const { role } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isStaff = STAFF_ROLES.includes(role);
   const registerLink = REGISTER_LINKS[role];
-
-  const handleSearchSubmit = (term) => {
-    if (term) navigate(`${CASE_LIST_LINKS[role] || '/dashboard'}?q=${encodeURIComponent(term)}`);
-  };
 
   return (
     <div className="min-h-screen bg-[#f6f6fa] text-slate-800 font-sans antialiased">
@@ -236,14 +225,11 @@ export default function DACLayout({ children, searchValue, onSearchChange, searc
               <span className="material-symbols-outlined text-[20px]">menu</span>
             </button>
             <div className="flex-1 min-w-0 max-w-3xl">
-              <SearchBox
+              <GlobalSearch
+                role={role}
                 value={searchValue}
                 onChange={onSearchChange}
-                results={searchResults}
-                onSubmit={handleSearchSubmit}
                 placeholder={role === 'student' ? 'Search your cases...' : 'Search by case ID, student, or offence...'}
-                shortcut="Ctrl K"
-                inputClassName="py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#3d3793] focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">

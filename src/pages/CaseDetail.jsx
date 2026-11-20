@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import DACLayout from '../components/layout/DACLayout';
 import AiRecommendationCard from '../components/cases/AiRecommendationCard';
+import PaymentPanel from '../components/payments/PaymentPanel';
+import StaffPaymentStatus from '../components/payments/StaffPaymentStatus';
 import { scrollToElement } from '../hooks/useLenis';
 import { Avatar, Button, Card, EmptyState, Icon, SeverityPill, StatusText } from '../components/cases/parts';
 import StudentProfileLink from '../components/cases/StudentProfileLink';
@@ -608,6 +610,8 @@ export default function CaseDetail() {
                       </p>
                     )}
 
+                    {status === 'resolved' && role !== 'student' && <StaffPaymentStatus caseId={caseItem.id} />}
+
                     {status !== 'resolved' && !canAct && (
                       <p className="text-sm text-slate-600">
                         Waiting on the <span className="font-medium">{ROLE_NAMES[assigned] || 'next reviewer'}</span>.
@@ -658,6 +662,10 @@ export default function CaseDetail() {
                     )}
                   </div>
                 </Card>
+
+                {/* Fine payment (demo), directly below the Workflow panel, for resolved cases only.
+                    The backend re-checks ownership and eligibility on every request. */}
+                {role === 'student' && status === 'resolved' && <PaymentPanel caseItem={caseItem} />}
               </div>
             </div>
           </>

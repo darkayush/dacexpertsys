@@ -239,6 +239,10 @@ export async function deleteCaseController(req, res) {
 
     return res.status(200).json({ message: 'Case deleted', case: deletedCase });
   } catch (error) {
+    // Payment records (case_payments) are kept as history and block deleting the case.
+    if (error?.code === '23503' && error?.table === 'case_payments') {
+      return res.status(409).json({ error: 'This case has a recorded fine payment and cannot be deleted.' });
+    }
     console.error('Error deleting case:', error);
     return res.status(500).json({ error: 'Failed to delete case' });
   }

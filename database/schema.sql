@@ -240,3 +240,23 @@ CREATE TABLE IF NOT EXISTS case_payments (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS case_payments_one_success_per_case_idx ON case_payments(case_id) WHERE payment_status = 'SUCCESS';
 CREATE INDEX IF NOT EXISTS case_payments_student_idx ON case_payments(student_id, created_at DESC);
+
+-- Consolidated payments (dashboard "pay all"): one header, one case_payments line per case.
+CREATE TABLE IF NOT EXISTS payment_transactions (
+    id SERIAL PRIMARY KEY,
+    -- One consolidated payment covering one or more cases (its lines are case_payments rows).
+    transaction_id TEXT NOT NULL UNIQUE,
+    student_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    idempotency_key TEXT UNIQUE,
+    total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount > 0),
+    currency CHAR(3) NOT NULL DEFAULT 'INR',
+    case_count INT NOT NULL CHECK (case_count >= 1),
+    payment_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (payment_status IN ('PENDING', 'SUCCESS', 'FAILED')),
+    payment_type TEXT NOT NULL DEFAULT 'DEMO' CHECK (payment_type = 'DEMO'),
+    payment_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS payment_transactions_student_idx ON payment_transactions(student_id, created_at DESC);
+ALTER TABLE case_payments ADD COLUMN IF NOT EXISTS payment_transaction_id INT REFERENCES payment_transactions(id) ON DELETE RESTRICT;
+CREATE INDEX IF NOT EXISTS case_payments_transaction_idx ON case_payments(payment_transaction_id) WHERE payment_transaction_id IS NOT NULL;

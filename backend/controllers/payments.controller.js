@@ -1,6 +1,8 @@
 import {
   PaymentError,
+  createConsolidatedPaymentService,
   createDemoPaymentService,
+  getStudentFineSummaryService,
   getCasePaymentStateService,
   getReceiptDataService,
   listStudentPaymentsService,
@@ -23,6 +25,8 @@ function sendError(res, error, fallbackMessage) {
       error: error.message,
       code: error.code,
       ...(error.payment ? { payment: error.payment } : {}),
+      ...(error.cases ? { cases: error.cases } : {}),
+      ...(error.total !== undefined ? { total: error.total } : {}),
     });
   }
   console.error(fallbackMessage, error);
@@ -35,6 +39,29 @@ export async function getMyPaymentsController(req, res) {
     return res.status(200).json(await listStudentPaymentsService(requesterOf(req).id));
   } catch (error) {
     return sendError(res, error, 'Failed to load payment history');
+  }
+}
+
+// GET /api/payments/summary — the student's case-wise fines, outstanding total and paid totals.
+export async function getFineSummaryController(req, res) {
+  try {
+    return res.status(200).json(await getStudentFineSummaryService(requesterOf(req).id));
+  } catch (error) {
+    return sendError(res, error, 'Failed to load your fines');
+  }
+}
+
+// POST /api/payments/batch { case_ids, expected_total, idempotency_key } — pay several cases at once.
+export async function createConsolidatedPaymentController(req, res) {
+  try {
+    const { payment, replayed } = await createConsolidatedPaymentService(requesterOf(req), {
+      caseIds: req.body?.case_ids,
+      expectedTotal: req.body?.expected_total ?? null,
+      idempotencyKey: req.body?.idempotency_key || null,
+    });
+    return res.status(replayed ? 200 : 201).json({ payment, replayed });
+  } catch (error) {
+    return sendError(res, error, 'The payment could not be completed. No payment was recorded.');
   }
 }
 

@@ -131,20 +131,85 @@ export function renderReceiptPdf(data) {
       y += 8;
     };
 
+    // New page when the next block would run into the footer area.
+    const FOOTER_TOP = H - 110; // footer rule is drawn at H - 104
+    const ensureSpace = (needed) => {
+      if (y + needed <= FOOTER_TOP) return;
+      doc.addPage({ size: 'A4', margin: 0 });
+      doc.save();
+      doc.rotate(-32, { origin: [W / 2, H / 2] });
+      doc.font('Helvetica-Bold').fontSize(120).fillColor(BRAND).fillOpacity(0.05)
+        .text('DEMO', 0, H / 2 - 70, { width: W, align: 'center' });
+      doc.restore();
+      doc.fillOpacity(1);
+      y = 56;
+    };
+
+    // Case-wise lines of a consolidated payment, with a total row.
+    const caseTable = (items) => {
+      const cols = [
+        { label: 'Case reference', x: M, w: 120 },
+        { label: 'Offence', x: M + 128, w: 170 },
+        { label: 'Case status', x: M + 306, w: 110 },
+        { label: 'Amount', x: M + 416, w: contentW - 416, align: 'right' },
+      ];
+      const header = () => {
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(MUTED);
+        cols.forEach((c) => doc.text(c.label.toUpperCase(), c.x, y, { width: c.w, align: c.align || 'left', characterSpacing: 0.4 }));
+        y += 16;
+        doc.moveTo(M, y - 4).lineTo(W - M, y - 4).lineWidth(0.5).strokeColor(LINE).stroke();
+      };
+      doc.moveTo(M, y).lineTo(W - M, y).lineWidth(1).strokeColor(LINE).stroke();
+      y += 14;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND).text(`CASES COVERED (${items.length})`, M, y, { characterSpacing: 0.8 });
+      y += 20;
+      header();
+      for (const item of items) {
+        const cells = [
+          item.external_case_id || `#${item.case_id}`,
+          titleCase(item.offense_type) || '—',
+          STATUS_LABELS[item.case_status] || titleCase(item.case_status),
+          formatAmount(item.amount, data.currency),
+        ].map(pdfSafe);
+        doc.font('Helvetica').fontSize(9.5);
+        const h = Math.max(...cells.map((t, i) => doc.heightOfString(t, { width: cols[i].w })), 11);
+        if (y + h + 8 > FOOTER_TOP) {
+          ensureSpace(h + 40);
+          header();
+        }
+        cells.forEach((t, i) => doc.fillColor(i === 3 ? INK : '#334155').text(t, cols[i].x, y, { width: cols[i].w, align: cols[i].align || 'left' }));
+        y += h + 8;
+      }
+      ensureSpace(30);
+      doc.moveTo(M, y).lineTo(W - M, y).lineWidth(0.5).strokeColor(LINE).stroke();
+      y += 8;
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(INK)
+        .text('Total paid', M, y, { width: 300 })
+        .text(formatAmount(data.amount, data.currency), cols[3].x - 40, y, { width: cols[3].w + 40, align: 'right' });
+      y += 26;
+    };
+
     section('Student information', [
       ['Student name', data.student_name],
       ['Student ID', data.enrollment_no],
       ['Email', data.student_email],
       ['Program', data.program ? String(data.program).toUpperCase() : null],
     ]);
-    section('Case information', [
-      ['Case reference', data.external_case_id || `#${data.case_id}`],
-      ['Offence', titleCase(data.offense_type)],
-      ['Case status', STATUS_LABELS[data.case_status] || titleCase(data.case_status)],
-      ['Decision', data.decision ? String(data.decision).slice(0, 300) : null],
-    ]);
+    if (data.consolidated) {
+      caseTable(data.items || []);
+    } else {
+      section('Case information', [
+        ['Case reference', data.external_case_id || `#${data.case_id}`],
+        ['Offence', titleCase(data.offense_type)],
+        ['Case status', STATUS_LABELS[data.case_status] || titleCase(data.case_status)],
+        ['Decision', data.decision ? String(data.decision).slice(0, 300) : null],
+      ]);
+    }
+    // Section height: heading (34) + one 20pt row per field + padding.
+    ensureSpace(34 + (data.consolidated ? 7 : 6) * 20 + 8);
     section('Transaction information', [
       ['Transaction ID', data.transaction_id],
+      ...(data.consolidated ? [['Cases covered', String(data.items?.length || data.case_count)]] : []),
       ['Date and time', formatDateTime(data.payment_date)],
       ['Amount paid', formatAmount(data.amount, data.currency)],
       ['Currency', data.currency],

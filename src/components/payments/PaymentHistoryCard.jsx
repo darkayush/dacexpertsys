@@ -5,8 +5,24 @@ import { Card, EmptyState, Icon } from '../cases/parts';
 import ReceiptActions from './ReceiptActions';
 import { formatINR, formatPaymentDate } from './format';
 
-/** The signed-in student's demo payments (from GET /api/payments/mine), with receipt actions. */
-export default function PaymentHistoryCard() {
+// The case(s) a payment covers: one link, or every case of a consolidated payment.
+function CaseLinks({ payment }) {
+  const cases = payment.cases?.length ? payment.cases : [{ case_id: payment.case_id, case_ref: payment.case_ref }];
+  return (
+    <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+      {cases.length > 1 && <span className="w-full text-xs text-slate-500">{cases.length} cases</span>}
+      {cases.map((c) => (
+        <Link key={c.case_id} to={`/student/cases/${c.case_id}`} className="font-medium text-[#3d3793] hover:underline">{c.case_ref}</Link>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The signed-in student's payments (from GET /api/payments/mine), one entry per transaction,
+ * with receipt actions. `refreshKey` changes after a payment to reload from the server.
+ */
+export default function PaymentHistoryCard({ refreshKey = 0 }) {
   const [state, setState] = useState({ status: 'loading', rows: [], error: '' });
 
   useEffect(() => {
@@ -15,7 +31,7 @@ export default function PaymentHistoryCard() {
       .then((rows) => active && setState({ status: 'done', rows: Array.isArray(rows) ? rows : [], error: '' }))
       .catch((error) => active && setState({ status: 'error', rows: [], error: error?.message || 'Could not load your payments.' }));
     return () => { active = false; };
-  }, []);
+  }, [refreshKey]);
 
   return (
     <Card title="Payment History" icon="receipt_long">
@@ -27,7 +43,7 @@ export default function PaymentHistoryCard() {
       )}
       {state.status === 'error' && <p className="px-6 pb-6 text-sm text-rose-700">{state.error}</p>}
       {state.status === 'done' && state.rows.length === 0 && (
-        <EmptyState icon="receipt_long">No payments yet. Fines for resolved cases can be paid from the case page.</EmptyState>
+        <EmptyState icon="receipt_long">No payments yet. Fines for resolved cases can be paid from the case page or the Total Outstanding Fine panel above.</EmptyState>
       )}
       {state.status === 'done' && state.rows.length > 0 && (
         <>
@@ -48,7 +64,7 @@ export default function PaymentHistoryCard() {
                 {state.rows.map((p) => (
                   <tr key={p.transaction_id} className="align-middle">
                     <td className="py-3 pr-4">
-                      <Link to={`/student/cases/${p.case_id}`} className="font-medium text-[#3d3793] hover:underline">{p.case_ref}</Link>
+                      <CaseLinks payment={p} />
                     </td>
                     <td className="py-3 pr-4 tabular-nums text-slate-900">{formatINR(p.amount)}</td>
                     <td className="py-3 pr-4 font-mono text-[13px] text-slate-700">{p.transaction_id}</td>
@@ -71,7 +87,7 @@ export default function PaymentHistoryCard() {
               <li key={p.transaction_id} className="rounded-2xl border border-slate-100 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Link to={`/student/cases/${p.case_id}`} className="font-medium text-[#3d3793] hover:underline">{p.case_ref}</Link>
+                    <CaseLinks payment={p} />
                     <p className="text-xs text-slate-500 mt-0.5">{formatPaymentDate(p.payment_date)}</p>
                   </div>
                   <p className="text-lg font-semibold text-slate-900 tabular-nums">{formatINR(p.amount)}</p>

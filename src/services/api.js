@@ -473,3 +473,19 @@ export async function globalSearch({ q = '', offence = '' } = {}, { signal } = {
   if (offence) params.set('offence', offence);
   return fetchJson(`/api/search?${params.toString()}`, { signal });
 }
+
+/** The signed-in student's case-wise fines: { total_outstanding, outstanding_count, paid_count, items, ... }. */
+export async function getFineSummary() {
+  return fetchJson('/api/payments/summary');
+}
+
+/**
+ * Pays several of the student's cases in one transaction. The server re-checks every case and
+ * rejects the request if its own total differs from `expectedTotal`.
+ */
+export async function createConsolidatedPayment({ caseIds, expectedTotal, idempotencyKey }) {
+  return fetchJson('/api/payments/batch', {
+    method: 'POST',
+    body: JSON.stringify({ case_ids: caseIds, expected_total: expectedTotal, idempotency_key: idempotencyKey }),
+  });
+}

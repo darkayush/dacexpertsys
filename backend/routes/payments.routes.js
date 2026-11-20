@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   createCasePaymentController,
+  createConsolidatedPaymentController,
+  getFineSummaryController,
   getCasePaymentController,
   getMyPaymentsController,
   getReceiptController,
@@ -12,6 +14,8 @@ import { requireRoles } from '../middleware/auth.middleware.js';
 const router = Router();
 
 router.get('/mine', requireRoles('student'), getMyPaymentsController);
+router.get('/summary', requireRoles('student'), getFineSummaryController);
+router.post('/batch', requireRoles('student'), createConsolidatedPaymentController);
 router.get('/cases/:caseId', requireRoles('student', 'warden', 'chief_warden', 'dsw', 'admin'), getCasePaymentController);
 router.post('/cases/:caseId', requireRoles('student'), createCasePaymentController);
 router.get('/:transactionId/receipt', requireRoles('student', 'warden', 'chief_warden', 'dsw', 'admin'), getReceiptController);

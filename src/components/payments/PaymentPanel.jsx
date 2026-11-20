@@ -111,6 +111,11 @@ export default function PaymentPanel({ caseItem }) {
                 <Row label="Case reference">{payment.case_ref}</Row>
                 <Row label="Transaction ID"><span className="font-mono text-[13px]">{payment.transaction_id}</span></Row>
                 <Row label="Date and time">{formatPaymentDate(payment.payment_date)}</Row>
+                {payment.consolidated && payment.transaction_case_count > 1 && (
+                  <Row label="Paid together">
+                    {payment.transaction_case_count} cases · {formatINR(payment.transaction_total)}
+                  </Row>
+                )}
               </dl>
               <ReceiptActions transactionId={payment.transaction_id} />
             </motion.div>

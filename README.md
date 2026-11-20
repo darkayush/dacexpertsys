@@ -13,6 +13,7 @@ A web application for **BML Munjal University** that manages student disciplinar
 - **Private evidence storage** in Supabase Storage with short-lived signed links.
 - **Demo fine payments**: on a resolved case with a fine, the student pays from a Payment panel below the Workflow panel (checkout, processing and success screens) and gets a server-generated PDF receipt. **No real gateway and no real money**: the student screens show a normal payment flow, but every payment is stored with `payment_type = 'DEMO'` and the PDF receipt is marked as a demonstration.
 - In-app **notifications** and a **case timeline** (audit trail).
+- **Total Outstanding Fine** on the student dashboard: outstanding total, case-wise breakdown (payable / awaiting resolution / paid), and paying several cases in one transaction with the same checkout and an itemized receipt.
 - **Global search** in the top bar on every page (Ctrl/⌘ + K): students (name, enrollment number, email), cases (case ID, offence, student) and offences, scoped to the user's role. Choosing a result opens that record; opening or closing search never changes the page.
 - A **DAC Assistant chatbot**. It uses RAG over DAC policy documents and case records with PostgreSQL + pgvector + Google Gemini, and falls back to a rule-based answer when Gemini is not configured.
 
@@ -229,7 +230,9 @@ Base URL: `http://localhost:5001` in development (macOS uses port 5000 for AirPl
 | `GET /api/cases/meetings/mine` | student | The student's own meetings |
 | `GET /api/payments/cases/:id` | student (own case), staff | Payment panel state: `{ case_ref, amount, currency, eligible, reason, payment }` |
 | `POST /api/payments/cases/:id` | student (own case) | Confirm a **demo** payment `{ idempotency_key }` → `{ payment, replayed }` (201 new, 200 replay of the same checkout). 409 when not resolved, no fine, or already paid |
-| `GET /api/payments/mine` | student | Own payment history |
+| `GET /api/payments/mine` | student | Own payment history, one entry per transaction (a consolidated payment lists its cases) |
+| `GET /api/payments/summary` | student | Case-wise fines: `{ total_outstanding, outstanding_count, paid_total, paid_count, awaiting_count, items }`; each item is `payable`, `paid`, `awaiting_resolution` or `no_fine` |
+| `POST /api/payments/batch` | student | Pay several own cases in **one** transaction `{ case_ids, expected_total, idempotency_key }`. All or nothing: every case is re-checked under row locks and the server computes the total; 409 `CASES_NOT_PAYABLE` / `AMOUNT_CHANGED` if anything changed |
 | `GET /api/payments/:transactionId/receipt[?download=1]` | owning student, staff | PDF receipt built from the stored payment |
 | `PUT /api/cases/:id` | admin, or the owning warden while `pending_chief` | Update fields (incl. `fine`, `decision`) |
 | `DELETE /api/cases/:id` | admin | Delete case |
@@ -292,6 +295,7 @@ npm run rag:ingest
 - **Newer columns**: `cases.resolution_type` (`'warning'` when closed with a warning), `cases.incident_group_id`.
 - **Indexes** for the dashboard and case page: `cases(created_by)`, `cases(incident_group_id)`, `case_timeline(case_id)`, `evidence(case_id)`, `notifications(user_id, created_at)`, `case_meetings(case_id)`, `case_meetings(student_id, scheduled_at)`.
 - **`case_payments`** (demo fine payments): FKs to `users` and `cases` with `ON DELETE RESTRICT` (a paid case or its student cannot be deleted), unique `transaction_id` (`TXN-YYYYMMDD-XXXXXXXX`; older `DEMO-…` ids are still accepted) and `idempotency_key`, CHECKs on amount, `payment_status` (`PENDING`/`SUCCESS`/`FAILED`) and `payment_type` (`DEMO` only), and a partial unique index allowing **one `SUCCESS` payment per case**. The amount is copied from `cases.fine` (the Admin's decision) at payment time.
+- **`payment_transactions`** (consolidated payments): one header per transaction (`transaction_id`, `total_amount`, `case_count`, `idempotency_key`); its cases are `case_payments` rows linked by `case_payments.payment_transaction_id` (NULL for single-case payments). The one-`SUCCESS`-per-case index covers both kinds.
 - **Optional**: `rag_documents.embedding vector(768)` and an HNSW index, created only when `pgvector` is installed.
 
 Student details (name, enrollment number, program, hostel, room, gender) live **only in `users`**. Cases reference them through `student_id`.

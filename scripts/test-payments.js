@@ -16,8 +16,10 @@ import pool from '../backend/config/db.js';
 import { verifyToken } from '../backend/middleware/auth.middleware.js';
 import paymentsRoutes from '../backend/routes/payments.routes.js';
 import {
+  createConsolidatedPaymentService,
   createDemoPaymentService,
   getCasePaymentStateService,
+  getStudentFineSummaryService,
   getReceiptDataService,
   listStudentPaymentsService,
 } from '../backend/services/payments.service.js';
@@ -170,6 +172,80 @@ try {
   db.release();
 }
 
+// ── Consolidated ("pay all") payments, in a second rolled-back transaction ──────
+{
+  const db2 = await pool.connect();
+  const lineCount = async () => (await q(db2, 'SELECT COUNT(*)::int AS n FROM case_payments'))[0].n;
+  try {
+    await db2.query('BEGIN');
+    console.log('\nFine summary');
+    const before = await getStudentFineSummaryService(S.id, { client: db2 });
+    const item = (id) => before.items.find((i) => i.case_id === id);
+    check('summary lists every case of the student', before.items.length === (await q(db2, 'SELECT COUNT(*)::int AS n FROM cases WHERE student_id = $1', [S.id]))[0].n);
+    check('resolved unpaid cases are payable with their fine outstanding', item(r1.id)?.state === 'payable' && item(r1.id).outstanding === Number(r1.fine));
+    check('unresolved case is awaiting resolution and not outstanding', item(open.id)?.state === 'awaiting_resolution' && item(open.id).outstanding === 0);
+    const expectedOutstanding = before.items.filter((i) => i.state === 'payable').reduce((sum, i) => sum + i.fine, 0);
+    check('total outstanding = sum of payable fines only', before.total_outstanding === Math.round(expectedOutstanding * 100) / 100 && before.outstanding_count === before.items.filter((i) => i.payable).length);
+    const otherSummary = await getStudentFineSummaryService(S2.id, { client: db2 });
+    check("another student's summary never includes this student's cases", !otherSummary.items.some((i) => i.case_id === r1.id));
+
+    console.log('\nConsolidated payment');
+    const total2 = Number(r1.fine) + Number(r2.fine);
+    await expectError('staff cannot make a consolidated payment', () => createConsolidatedPaymentService(ADMIN, { caseIds: [r1.id] }, { client: db2 }), { status: 403 });
+    await expectError('an empty selection is rejected', () => createConsolidatedPaymentService(S, { caseIds: [] }, { client: db2 }), { status: 400 });
+    const linesBefore = await lineCount();
+    await expectError('including an unresolved case rejects the whole payment', () => createConsolidatedPaymentService(S, { caseIds: [r1.id, open.id], idempotencyKey: key() }, { client: db2 }), { status: 409, code: 'CASES_NOT_PAYABLE' });
+    await expectError("including another student's case is rejected", () => createConsolidatedPaymentService(S2, { caseIds: [r1.id], idempotencyKey: key() }, { client: db2 }), { status: 404 });
+    await expectError('a total that differs from the server total is rejected', () => createConsolidatedPaymentService(S, { caseIds: [r1.id, r2.id], expectedTotal: total2 - 1, idempotencyKey: key() }, { client: db2 }), { status: 409, code: 'AMOUNT_CHANGED' });
+    check('rejected payments record nothing (all or nothing)', (await lineCount()) === linesBefore);
+
+    const bk = key();
+    const batch = await createConsolidatedPaymentService(S, { caseIds: [r2.id, r1.id, r1.id], expectedTotal: total2, idempotencyKey: bk }, { client: db2 });
+    const bp = batch.payment;
+    check('one consolidated transaction covers both cases (duplicates ignored)', !batch.replayed && bp.case_count === 2 && bp.cases.length === 2);
+    check('consolidated amount is the server-computed total', bp.amount === total2);
+    check('consolidated transaction id has the TXN- format', /^TXN-\d{8}-[0-9A-F]{8}$/.test(bp.transaction_id), bp.transaction_id);
+    check('one payment line per case was written', (await lineCount()) === linesBefore + 2);
+    const after = await getStudentFineSummaryService(S.id, { client: db2 });
+    check('outstanding drops by exactly the paid amount (no double counting)', Math.abs(after.total_outstanding - (before.total_outstanding - total2)) < 0.001 && after.paid_count === before.paid_count + 2);
+    check('paid cases show the consolidated transaction id', after.items.find((i) => i.case_id === r1.id)?.payment?.transaction_id === bp.transaction_id);
+    const caseState = await getCasePaymentStateService(r1.id, S, { client: db2 });
+    check('case page state reports the consolidated payment and links its receipt', caseState.payment?.transaction_id === bp.transaction_id && caseState.payment.consolidated && caseState.payment.amount === Number(r1.fine));
+    const replay = await createConsolidatedPaymentService(S, { caseIds: [r1.id, r2.id], expectedTotal: total2, idempotencyKey: bk }, { client: db2 });
+    check('retrying the same checkout returns the same transaction', replay.replayed && replay.payment.transaction_id === bp.transaction_id);
+    await expectError('paying the same cases again is rejected', () => createConsolidatedPaymentService(S, { caseIds: [r1.id], idempotencyKey: key() }, { client: db2 }), { status: 409, code: 'CASES_NOT_PAYABLE' });
+    await expectError('single-case payment of a case paid in a batch is rejected', () => createDemoPaymentService(r1.id, S, { idempotencyKey: key() }, { client: db2 }), { status: 409, code: 'ALREADY_PAID' });
+    const [{ n: timelineRows }] = await q(db2, 'SELECT COUNT(*)::int AS n FROM case_timeline WHERE case_id = ANY($1) AND event LIKE $2', [[r1.id, r2.id], `%${bp.transaction_id}%`]);
+    check('a timeline entry was written for each case', timelineRows === 2);
+
+    console.log('\nConsolidated history and receipt');
+    const hist = await listStudentPaymentsService(S.id, { client: db2 });
+    const entry = hist.find((h) => h.transaction_id === bp.transaction_id);
+    check('history shows the consolidated payment once, with both cases', hist.filter((h) => h.transaction_id === bp.transaction_id).length === 1 && entry.cases.length === 2 && entry.amount === total2);
+    const rData = await getReceiptDataService(bp.transaction_id, S, { client: db2 });
+    check('consolidated receipt data has case-wise items', rData.consolidated && rData.items.length === 2 && Number(rData.amount) === total2);
+    await expectError('another student cannot load the consolidated receipt', () => getReceiptDataService(bp.transaction_id, S2, { client: db2 }), { status: 404 });
+    await expectError('internal line ids are not receipt ids', () => getReceiptDataService(`${bp.transaction_id}-1`, S, { client: db2 }), { status: 404 });
+    const rPdf = await renderReceiptPdf(rData);
+    check('consolidated PDF receipt is a complete PDF', rPdf.subarray(0, 5).toString() === '%PDF-' && rPdf.subarray(-6).toString().includes('%%EOF'));
+    if (outDir) fs.writeFileSync(path.join(outDir, `test-receipt-consolidated-${bp.transaction_id}.pdf`), rPdf);
+    const manyItems = Array.from({ length: 30 }, (_, i) => ({ ...rData.items[i % 2], external_case_id: `DAC-TEST-${i + 1}` }));
+    const longPdf = await renderReceiptPdf({ ...rData, items: manyItems });
+    const pages = (longPdf.toString('latin1').match(/\/Type \/Page[^s]/g) || []).length;
+    check('a long case list breaks onto further pages', pages >= 2, `${pages} page(s)`);
+
+    console.log('\nRe-opened case in a consolidated payment');
+    const [r3] = await q(db2, `SELECT c.id FROM cases c WHERE c.student_id = $1 AND ${PAYABLE} AND ${UNPAID} AND c.id NOT IN ($2, $3) LIMIT 1`, [S.id, r1.id, r2.id]);
+    const reopenTarget = r3 || r2;
+    if (!r3) await db2.query("DELETE FROM case_payments WHERE case_id = $1 AND payment_transaction_id IS NOT NULL", [r2.id]);
+    await db2.query("UPDATE cases SET status = 'pending_admin' WHERE id = $1", [reopenTarget.id]);
+    await expectError('a re-opened case cannot be paid in a batch', () => createConsolidatedPaymentService(S, { caseIds: [reopenTarget.id], idempotencyKey: key() }, { client: db2 }), { status: 409, code: 'CASES_NOT_PAYABLE' });
+  } finally {
+    await db2.query('ROLLBACK');
+    db2.release();
+  }
+}
+
 // ── Concurrency: two checkouts for the same case are serialised by the row lock ──
 console.log('\nConcurrency');
 {
@@ -187,6 +263,31 @@ console.log('\nConcurrency');
     await a.query('ROLLBACK'); // the first checkout fails, so the second may proceed
     const bResult = await bPromise;
     check('after the first checkout is rolled back, the waiting one completes once', bResult.payment.payment_status === 'SUCCESS');
+  } finally {
+    await a.query('ROLLBACK').catch(() => {});
+    await b.query('ROLLBACK').catch(() => {});
+    a.release();
+    b.release();
+  }
+}
+
+// ── Concurrency: two batches over the same cases in opposite order (no deadlock) ──
+console.log('\nConcurrency (consolidated)');
+{
+  const a = await pool.connect();
+  const b = await pool.connect();
+  try {
+    await a.query('BEGIN');
+    await b.query('BEGIN');
+    await createConsolidatedPaymentService(S, { caseIds: [r1.id, r2.id], idempotencyKey: key() }, { client: a });
+    let bDone = false;
+    const bRun = createConsolidatedPaymentService(S, { caseIds: [r2.id, r1.id], idempotencyKey: key() }, { client: b })
+      .then((r) => { bDone = true; return r; }, (e) => { bDone = true; throw e; });
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    check('a concurrent batch for the same cases waits for the first', !bDone);
+    await a.query('ROLLBACK');
+    const bRes = await bRun;
+    check('after the first batch rolls back, the waiting batch completes (no deadlock)', bRes.payment.case_count === 2);
   } finally {
     await a.query('ROLLBACK').catch(() => {});
     await b.query('ROLLBACK').catch(() => {});
@@ -220,6 +321,12 @@ console.log('\nHTTP endpoints (no writes)');
     check('staff cannot list student history (403)', (await call('/api/payments/mine', { user: ADMIN })).status === 403);
     const blocked = await call(`/api/payments/cases/${open.id}`, { user: S, method: 'POST', body: { idempotency_key: key() } });
     check('direct POST for an unresolved case is rejected (409)', blocked.status === 409);
+    check('staff cannot open the student fine summary (403)', (await call('/api/payments/summary', { user: ADMIN })).status === 403);
+    check('student reads their own fine summary (200)', (await call('/api/payments/summary', { user: S })).status === 200);
+    check('unauthenticated summary is rejected (401)', (await call('/secured/api/payments/summary')).status === 401);
+    const badBatch = await call('/api/payments/batch', { user: S, method: 'POST', body: { case_ids: [open.id], idempotency_key: key() } });
+    check('direct batch POST with an unresolved case is rejected (409)', badBatch.status === 409);
+    check('staff cannot POST a batch (403)', (await call('/api/payments/batch', { user: ADMIN, method: 'POST', body: { case_ids: [r1.id] } })).status === 403);
     check('invalid case id is rejected (400)', (await call('/api/payments/cases/abc', { user: S })).status === 400);
     check('unknown receipt is not found (404)', (await call('/api/payments/DEMO-20000101-00000000/receipt', { user: S })).status === 404);
   } finally {
@@ -227,7 +334,7 @@ console.log('\nHTTP endpoints (no writes)');
   }
 }
 
-const [{ n: leftover }] = await q(pool, "SELECT COUNT(*)::int AS n FROM case_payments WHERE idempotency_key LIKE 'test-%'");
+const [{ n: leftover }] = await q(pool, "SELECT ((SELECT COUNT(*) FROM case_payments WHERE idempotency_key LIKE 'test-%') + (SELECT COUNT(*) FROM payment_transactions WHERE idempotency_key LIKE 'test-%'))::int AS n");
 check('no test payments were left in the database', leftover === 0, `${leftover} left`);
 await pool.end();
 

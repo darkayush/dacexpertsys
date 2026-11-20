@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DACLayout from '../../components/layout/DACLayout';
 import CasesTable from '../../components/cases/CasesTable';
+import OutstandingFinePanel from '../../components/payments/OutstandingFinePanel';
 import PaymentHistoryCard from '../../components/payments/PaymentHistoryCard';
 import { Card, Icon } from '../../components/cases/parts';
 import { ACTIVE_STATUSES, fmtNumber, mapCase } from '../../components/cases/caseUi';
@@ -27,6 +28,8 @@ export default function StudentDashboard() {
   const [now] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Bumped after a payment so the payment history reloads from the server.
+  const [paymentsVersion, setPaymentsVersion] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -113,7 +116,7 @@ export default function StudentDashboard() {
 
         {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl px-4 py-3">{error}</p>}
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start xl:items-stretch">
           <Card title="Penalty Points" icon="speed" className="xl:col-span-5">
             <div className="px-6 pb-6">
               <p className="text-4xl font-semibold text-slate-900 tabular-nums">
@@ -130,7 +133,8 @@ export default function StudentDashboard() {
             </div>
           </Card>
 
-          <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="xl:col-span-7 flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {countCards.map((item) => (
               <div key={item.label} className={`rounded-2xl border px-5 py-6 flex items-center gap-4 ${item.card}`}>
                 <span className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center ${item.chip}`}>
@@ -142,12 +146,16 @@ export default function StudentDashboard() {
                 </span>
               </div>
             ))}
+            </div>
+
+            {/* Fine due, in the space under the count cards (right of Penalty Points). */}
+            <OutstandingFinePanel studentName={me?.name || currentUser?.name} onPaid={() => setPaymentsVersion((v) => v + 1)} />
           </div>
         </div>
 
         <CasesTable cases={cases} loading={loading} role="student" title="My Cases" pageSize={5} showStudent={false} />
 
-        <PaymentHistoryCard />
+        <PaymentHistoryCard refreshKey={paymentsVersion} />
       </div>
     </DACLayout>
   );

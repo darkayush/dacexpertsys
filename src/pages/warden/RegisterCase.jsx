@@ -27,7 +27,28 @@ function groupRulesByLevel(rules) {
   return [...groups.entries()];
 }
 
-const STEPS = ['Student Info', 'Incident Details', 'Evidence', 'Review', 'Submit'];
+const STEPS = ['Student Info', 'Incident Details', 'Evidence', 'Student Statement', 'Review', 'Submit'];
+const STATEMENT_STEP = 3;
+const STATEMENT_MAX_LENGTH = 5000; // same limits as the backend (cases.service.js)
+const DECLINE_REASON_MAX_LENGTH = 500;
+
+// --- Student statement (one per student; signed with a tick + typed full name, or declined) ---
+const EMPTY_STATEMENT = { text: '', declined: false, reason: '', confirmed: false, signedName: '' };
+const normaliseSignName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function statementStatus(entry, studentName) {
+  const st = entry || EMPTY_STATEMENT;
+  if (st.declined) return 'declined';
+  const signed = st.text.trim() && st.confirmed && normaliseSignName(st.signedName) === normaliseSignName(studentName);
+  return signed ? 'signed' : 'pending';
+}
+
+// Request body for one student's statement (the backend re-checks everything).
+function statementPayload(entry) {
+  const st = entry || EMPTY_STATEMENT;
+  if (st.declined) return { declined: true, decline_reason: st.reason.trim() || null };
+  return { text: st.text.trim(), confirmed: st.confirmed, signed_name: st.signedName.trim() };
+}
 
 function ProgressBar({ steps, currentStep }) {
   // Steps sit in equal-width columns, so each circle's centre is at (i + 0.5) / n of the
@@ -847,7 +868,228 @@ function StepEvidence({
   );
 }
 
-function StepReview({ form, groupStudents, groupReadings = {}, policyRule = null }) {
+const STATUS_CHIP = {
+  signed: { label: 'Signed', icon: 'verified', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  declined: { label: 'Declined', icon: 'block', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+  pending: { label: 'Pending', icon: 'schedule', cls: 'bg-[#f8fafc] text-[#64748b] border-[#e2e8f0]' },
+};
+
+// One student's statement: textarea, "declined" toggle and the e-sign (confirmation tick +
+// typed full name). Editing the text after signing clears the signature, so a signature always
+// belongs to the exact text it was given for.
+function StatementPanel({ student, entry, onChange, error }) {
+  const st = entry || EMPTY_STATEMENT;
+  const name = student?.name || 'the student';
+  const status = statementStatus(st, student?.name);
+  const idBase = `statement-${student?.id ?? 'single'}`;
+  const nameTyped = st.signedName.trim().length > 0;
+  const nameMatches = normaliseSignName(st.signedName) === normaliseSignName(student?.name);
+  const update = (patch) => onChange({ ...st, ...patch });
+
+  return (
+    <div className="flex flex-col gap-4" data-field={`statement_${student?.id ?? 'single'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[#0f172a] text-sm font-semibold">
+          Statement by {name}
+          {student?.enrollment_no ? <span className="ml-2 text-xs font-normal text-[#64748b]">{student.enrollment_no}</span> : null}
+        </p>
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_CHIP[status].cls}`}>
+          <span className="material-symbols-outlined text-[14px]">{STATUS_CHIP[status].icon}</span>
+          {STATUS_CHIP[status].label}
+        </span>
+      </div>
+
+      <label className="inline-flex items-center gap-2 text-sm text-[#334155] cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={st.declined}
+          onChange={(e) => update({ declined: e.target.checked, confirmed: false, signedName: '' })}
+          className="h-4 w-4 accent-[#3d3793]"
+        />
+        Student declined to give a statement
+      </label>
+
+      {st.declined ? (
+        <Field label="Reason (optional)">
+          <input
+            type="text"
+            value={st.reason}
+            maxLength={DECLINE_REASON_MAX_LENGTH}
+            onChange={(e) => update({ reason: e.target.value })}
+            placeholder="e.g. Student refused to write or sign a statement"
+            className={inputCls}
+          />
+        </Field>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            <label htmlFor={`${idBase}-text`} className="text-[#334155] text-xs font-bold uppercase tracking-wider">
+              Statement *
+            </label>
+            <textarea
+              id={`${idBase}-text`}
+              value={st.text}
+              maxLength={STATEMENT_MAX_LENGTH}
+              rows={7}
+              // A signature belongs to the exact text it was given for.
+              onChange={(e) => update({ text: e.target.value, confirmed: false, signedName: '' })}
+              placeholder="In your own words, describe what happened..."
+              className={`${inputCls} resize-y`}
+            />
+            <p className="text-[11px] text-[#94a3b8] text-right">{st.text.length} / {STATEMENT_MAX_LENGTH}</p>
+          </div>
+
+          <fieldset className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4 flex flex-col gap-3" disabled={!st.text.trim()}>
+            <legend className="px-1 text-xs font-bold uppercase tracking-wider text-[#334155]">E-signature</legend>
+            <label className="flex items-start gap-2 text-sm text-[#334155] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={st.confirmed}
+                onChange={(e) => update({ confirmed: e.target.checked })}
+                className="mt-0.5 h-4 w-4 accent-[#3d3793]"
+              />
+              <span>I, <strong>{name}</strong>, confirm that this statement was written by me and is true.</span>
+            </label>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor={`${idBase}-sign`} className="text-xs text-[#64748b]">Type your full name to sign</label>
+              <input
+                id={`${idBase}-sign`}
+                type="text"
+                value={st.signedName}
+                onChange={(e) => update({ signedName: e.target.value })}
+                placeholder={name}
+                autoComplete="off"
+                aria-invalid={nameTyped && !nameMatches}
+                aria-describedby={`${idBase}-sign-hint`}
+                className={`${inputCls} font-serif italic text-base`}
+              />
+              <p id={`${idBase}-sign-hint`} className={`text-xs ${nameTyped && !nameMatches ? 'text-red-600' : 'text-[#94a3b8]'}`}>
+                {!st.text.trim()
+                  ? 'Write the statement first.'
+                  : nameTyped && !nameMatches
+                    ? `The name must match the registered name: ${name}.`
+                    : 'Must match the name on record.'}
+              </p>
+            </div>
+          </fieldset>
+        </>
+      )}
+      {error ? <p className="text-xs text-red-600" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
+// Single student: one panel. Group: one student at a time (the device can be handed to each
+// student in turn), with status chips to jump between them and a progress count.
+function StepStudentStatement({ students, statements, onChange, activeId, onActiveChange, errors }) {
+  const isGroup = students.length > 1;
+  const active = students.find((s) => s.id === activeId) || students[0];
+  const done = students.filter((s) => statementStatus(statements[s.id], s.name) !== 'pending').length;
+  const nextPending = students.find((s) => s.id !== active?.id && statementStatus(statements[s.id], s.name) === 'pending');
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="material-symbols-outlined text-[#3d3793] text-[22px]">edit_note</span>
+        <h2 className="text-[#0f172a] font-bold text-[18px] leading-7">Student Statement</h2>
+      </div>
+      <p className="text-[#64748b] text-sm leading-5 -mt-2">
+        {isGroup
+          ? 'Hand the device to each student in turn. Each student writes and signs their own statement, or you mark that they declined.'
+          : 'Hand the device to the student to write and sign their statement, or mark that they declined.'}
+      </p>
+
+      {isGroup && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs text-[#64748b]">
+            <span>{done} of {students.length} statements done</span>
+            <span className="h-1.5 w-32 rounded-full bg-[#e2e8f0] overflow-hidden" aria-hidden="true">
+              <span className="block h-full bg-[#3d3793] transition-all" style={{ width: `${(done / students.length) * 100}%` }} />
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Students">
+            {students.map((s) => {
+              const status = statementStatus(statements[s.id], s.name);
+              const selected = s.id === active?.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onActiveChange(s.id)}
+                  aria-current={selected ? 'true' : undefined}
+                  aria-label={`${s.name}: ${STATUS_CHIP[status].label}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3d3793]/40 ${
+                    selected ? 'border-[#3d3793] bg-[#3d3793] text-white' : STATUS_CHIP[status].cls
+                  } ${errors[`statement_${s.id}`] && !selected ? 'ring-2 ring-red-300' : ''}`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">{STATUS_CHIP[status].icon}</span>
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {active && (
+        <div className={isGroup ? 'rounded-xl border border-[#e2e8f0] p-4 sm:p-5' : ''}>
+          <StatementPanel
+            key={active.id}
+            student={active}
+            entry={statements[active.id]}
+            onChange={(entry) => onChange(active.id, entry)}
+            error={errors[`statement_${active.id}`]}
+          />
+          {isGroup && nextPending && statementStatus(statements[active.id], active.name) !== 'pending' && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => onActiveChange(nextPending.id)}
+                className="inline-flex items-center gap-1 rounded-full border border-[#3d3793] px-4 py-2 text-xs font-bold text-[#3d3793] hover:bg-[#eef2fb]"
+              >
+                Next student: {nextPending.name}
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatementReview({ students, statements }) {
+  return (
+    <div className="rounded-lg border border-[#e2e8f0] overflow-hidden">
+      <div className="bg-[#f8fafc] px-4 py-2.5 text-xs font-bold text-[#0f172a] border-b border-[#e2e8f0]">
+        Student statement{students.length > 1 ? 's' : ''}
+      </div>
+      {students.map((s, i) => {
+        const st = statements[s.id] || EMPTY_STATEMENT;
+        const status = statementStatus(st, s.name);
+        return (
+          <div key={s.id} className={`px-4 py-3 ${i % 2 === 0 ? 'bg-white' : 'bg-[#f8fafc]'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[#0f172a] text-sm font-medium">{s.name}</span>
+              <span className={`text-xs font-semibold ${status === 'signed' ? 'text-emerald-700' : status === 'declined' ? 'text-amber-800' : 'text-red-600'}`}>
+                {status === 'signed' ? `Signed by ${st.signedName.trim()}` : status === 'declined' ? 'Declined' : 'Not signed'}
+              </span>
+            </div>
+            {status === 'signed' && (
+              <details className="mt-1">
+                <summary className="text-sm text-[#475569] cursor-pointer line-clamp-2">{st.text.trim()}</summary>
+                <p className="mt-2 text-sm text-[#0f172a] whitespace-pre-line">{st.text.trim()}</p>
+              </details>
+            )}
+            {status === 'declined' && st.reason.trim() && <p className="mt-1 text-sm text-[#475569]">Reason: {st.reason.trim()}</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StepReview({ form, groupStudents, groupReadings = {}, policyRule = null, statementStudents = [], statements = {} }) {
   const isGroup = Array.isArray(groupStudents);
   const showReadings = isGroup && form.offenseType === 'Substance Abuse' && form.substanceType === 'Alcohol';
   const rows = [
@@ -938,6 +1180,7 @@ function StepReview({ form, groupStudents, groupReadings = {}, policyRule = null
           <p className="text-[#0f172a] text-sm bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-4 py-3 leading-5">{form.description}</p>
         </div>
       )}
+      {statementStudents.length > 0 && <StatementReview students={statementStudents} statements={statements} />}
     </div>
   );
 }
@@ -1089,6 +1332,9 @@ export default function RegisterCase() {
   // 'single' = one student; 'group' = several students, one separate case each.
   const [incidentMode, setIncidentMode] = useState('single');
   const [groupStudents, setGroupStudents] = useState([]);
+  // Student statements by student id, and the student whose statement is open (group).
+  const [statements, setStatements] = useState({});
+  const [activeStatementId, setActiveStatementId] = useState(null);
   const [groupInput, setGroupInput] = useState('');
   const [groupLookup, setGroupLookup] = useState({ loading: false, type: '', message: '' });
   // Group incident with alcohol: one breathalyzer reading per student, keyed by student id.
@@ -1481,6 +1727,15 @@ export default function RegisterCase() {
     }
   };
 
+  // Students giving a statement: the group, or the single looked-up student.
+  const statementStudents = incidentMode === 'group'
+    ? groupStudents
+    : (studentId ? [{ id: studentId, name: form.studentName, enrollment_no: form.rollNumber }] : []);
+  const setStatement = (id, entry) => {
+    setStatements((prev) => ({ ...prev, [id]: entry }));
+    setErrors((prev) => (prev[`statement_${id}`] ? { ...prev, [`statement_${id}`]: '' } : prev));
+  };
+
   const validateStep = (step) => {
     const nextErrors = {};
 
@@ -1554,6 +1809,15 @@ export default function RegisterCase() {
           nextErrors.customOffense = 'This field is required';
         }
       }
+    }
+
+    if (step === STATEMENT_STEP) {
+      const pending = statementStudents.filter((s) => statementStatus(statements[s.id], s.name) === 'pending');
+      pending.forEach((s) => {
+        nextErrors[`statement_${s.id}`] = 'Write the statement, tick the confirmation and sign with the full name, or mark that the student declined.';
+      });
+      // Open the first student who still needs to sign.
+      if (pending.length) setActiveStatementId(pending[0].id);
     }
 
     setErrors(nextErrors);
@@ -1631,6 +1895,7 @@ export default function RegisterCase() {
             const student = {
               student_id: s.id,
               location: `${s.hostel || ''}${s.room ? ` Room ${s.room}` : ''}`.trim() || null,
+              statement: statementPayload(statements[s.id]),
             };
             if (isAlcohol) {
               // Each student's own reading; a non-numeric one goes into that case's notes.
@@ -1649,6 +1914,7 @@ export default function RegisterCase() {
         createdCases = [await createCase({
           ...shared,
           student_id: studentId,
+          statement: statementPayload(statements[studentId]),
           location: hostelLocation,
           incident_location: foundLocation || hostelLocation,
         })];
@@ -1774,8 +2040,18 @@ export default function RegisterCase() {
       uploadError={evidenceError}
       uploadedUrl={evidenceUploadedUrl}
     />,
+    <StepStudentStatement
+      students={statementStudents}
+      statements={statements}
+      onChange={setStatement}
+      activeId={activeStatementId}
+      onActiveChange={setActiveStatementId}
+      errors={errors}
+    />,
     <StepReview
       form={form}
+      statementStudents={statementStudents}
+      statements={statements}
       policyRule={policyRule}
       groupStudents={incidentMode === 'group' ? groupStudents : null}
       groupReadings={groupReadings}

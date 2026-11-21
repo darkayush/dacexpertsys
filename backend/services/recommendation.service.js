@@ -81,6 +81,8 @@ function describeCase(c) {
     ['Status', c.status],
     ['Part of a group incident', c.incident_group_id ? 'yes' : null],
     ['Description', c.description],
+    ['Student statement (signed by the student)', c.statement_declined ? null : c.student_statement],
+    ['Student declined to give a statement', c.statement_declined ? (c.statement_decline_reason || 'yes, no reason given') : null],
     ['Notes', c.notes],
     ['Decision so far', c.decision],
   ];

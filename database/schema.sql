@@ -97,6 +97,13 @@ CREATE TABLE IF NOT EXISTS cases (
     incident_group_id TEXT,
     -- Offence picked from Rules & Policies on Register Case (text snapshot of rules.question).
     policy_offence TEXT,
+    -- Student statement from Register Case: signed (text + typed full name, after a confirmation
+    -- tick) or declined (statement_declined = TRUE, optional reason). NULLs = no statement step.
+    student_statement TEXT,
+    statement_declined BOOLEAN,
+    statement_decline_reason TEXT,
+    statement_signed_name TEXT,
+    statement_signed_at TIMESTAMP,
     severity_score FLOAT,
     evidence_url TEXT,
     created_at TIMESTAMP DEFAULT NOW(),

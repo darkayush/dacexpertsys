@@ -7,7 +7,9 @@ A web application for **BML Munjal University** that manages student disciplinar
 - **Student profiles** with complete DAC case history and penalty points.
 - **Group incidents**: one registration for several students creates a separate case per student, each with its own alcohol reading.
 - **Hindi → English voice input** for the incident description (browser speech recognition + Groq translation).
-- **AI penalty recommendations** (Groq) on the case page for the Admin's final decision, generated on request and grounded in the official DAC and Unfair Means policies. **Use in decision** copies the suggested points, fine and action into the decision form.
+- **AI penalty recommendations** (Groq) on the case page for the Admin's final decision, generated on request and grounded in the official DAC and Unfair Means policies. A **Repeat offences** box shows the student's earlier cases, counting warnings as prior offences, with a short note on how they affect the penalty. **Use in decision** copies the suggested points, fine and action into the decision form.
+- **Student statements** in Register Case: after Evidence, each student writes a statement and e-signs it (confirmation tick + typed full name, checked against the record), or the warden marks that they declined. For group incidents, students sign one at a time.
+- **Offence types linked to Rules & Policies**: on Register Case the warden picks an offence type, then the specific policy offence. The case stores that offence and its level.
 - **DAC meetings**: the Admin schedules an in-person meeting; the student sees it on their dashboard and gets an email.
 - **Automatic emails** (Gmail SMTP) for meetings and for DAC points imposed by the Admin.
 - **Private evidence storage** in Supabase Storage with short-lived signed links.
@@ -17,7 +19,8 @@ A web application for **BML Munjal University** that manages student disciplinar
 - **Global search** in the top bar on every page (Ctrl/⌘ + K): students (name, enrollment number, email), cases (case ID, offence, student) and offences, scoped to the user's role. Choosing a result opens that record; opening or closing search never changes the page.
 - A **DAC Assistant chatbot** for staff. Groq (`openai/gpt-oss-120b`) writes the answer from database lookups and PostgreSQL keyword search over DAC policy and case documents; a rule-based answer is used when Groq is not configured or fails.
 - **DAC points count only after resolution**: a student's total is the sum of points of their resolved cases (warnings add none), kept in sync by a database trigger.
-- **Dashboard charts** (Case Trend, Case Distribution) with hover details.
+- **Dashboard charts** (Case Trend, Case Distribution) with hover details, and a **Recently Viewed** panel (Cases / Students) for staff.
+- **Case page**: Policy offence and level from the system config; points and fine show "—" until the case is resolved; the timeline ticks completed steps and lists the pending ones.
 
 ---
 
@@ -96,7 +99,8 @@ A web application for **BML Munjal University** that manages student disciplinar
 │   ├── test-all-10-queries.js # 10 reference chatbot questions with expected intents
 │   ├── test-payments.js       # Demo payment checks (writes rolled back)
 │   ├── test-search.js         # Global search checks (read-only)
-│   └── test-points.js         # DAC points rule + concurrency checks (writes rolled back)
+│   ├── test-points.js         # DAC points rule + concurrency checks (writes rolled back)
+│   └── backfill-policy-offence.js # npm run cases:backfill-offence — give older cases a policy offence
 │
 ├── public/                    # Static assets (favicon.png = sidebar/login logo, logo.png, login-campus.jpg,
 │                              # loader-tree.png + page-loader.css for the page loader)
@@ -111,7 +115,8 @@ A web application for **BML Munjal University** that manages student disciplinar
     ├── hooks/usePagedCases.js # Server-side paging + debounced search for case lists
     ├── lib/
     │   ├── motion.js          # Shared Framer Motion variants
-    │   └── assistant.js       # window event that opens/closes the chatbot panel
+    │   ├── assistant.js       # window event that opens/closes the chatbot panel
+    │   └── recentlyViewed.js  # Per-user "recently viewed" cases/students (localStorage)
     ├── components/
     │   ├── DacChatbot.jsx     # Floating DAC Assistant panel (staff only)
     │   ├── PageLoader.jsx     # Page / route loader (tree logo + rotating ring; styles in public/page-loader.css)
@@ -120,22 +125,25 @@ A web application for **BML Munjal University** that manages student disciplinar
     │   ├── layout/            # DACLayout (sidebar per role, top bar), GlobalSearch (header search on every page)
     │   ├── cases/             # CasesTable, charts (TrendChart, Donut, with hover cards), parts (Card, Icon, Avatar…),
     │   │                      # caseUi.js (labels, mapping, filters, links), trend.js, StudentProfileLink,
-    │   │                      # AiRecommendationCard (Groq recommendation on the admin's case page)
+    │   │                      # AiRecommendationCard (Groq recommendation + repeat offences on the admin's case page),
+    │   │                      # RecentlyViewedCard (dashboard panel)
     │   ├── payments/          # PaymentPanel (case page), OutstandingFinePanel + FineBreakdownModal (dashboard),
     │   │                      # CheckoutModal + PaymentSheet (shared checkout), PaymentHistoryCard, receipts
     │   └── ui/                # StudentCard, StatusBadge, EmptyState (SeverityBadge is unused)
     └── pages/
-        ├── Dashboard.jsx      # Admin / DSW / Chief Warden / Warden dashboard (all-time counts, role-scoped table, charts)
+        ├── Dashboard.jsx      # Admin / DSW / Chief Warden / Warden dashboard (all-time counts, role-scoped table,
+        │                      # Needs Your Decision, Recently Viewed, charts)
         ├── CaseList.jsx       # Server-paged, searchable case list
         ├── CaseDetail.jsx     # Case page: stepper, details, evidence, timeline, workflow, warning, group, DAC meeting,
         │                      # AI recommendation (admin), Payment panel (student, resolved cases)
-        ├── StudentProfile.jsx # Staff view of one student's DAC history (resolved points + pending points)
+        ├── StudentProfile.jsx # Staff view of one student's DAC history (resolved points; "—" for unresolved cases)
         ├── Notifications.jsx, Profile.jsx, Settings.jsx (change password)
         ├── AdminSettings.jsx  # Shell for admin/* nested routes
         ├── admin/             # UserManagement, SystemConfig (policy view), RulesWeights, EmailTest
         ├── student/           # StudentDashboard (DAC meeting card, Total fine due + Pay now, payment history),
         │                      # StudentPolicy (both PDFs)
-        └── warden/RegisterCase.jsx # Case registration wizard: single or group incident, Hindi voice input
+        └── warden/RegisterCase.jsx # Case registration wizard: single or group incident, offence type → policy
+                                    # offence from Rules & Policies, student statements + e-sign, Hindi voice input
 ```
 
 ---
@@ -150,12 +158,27 @@ Roles come from the PostgreSQL enum `user_role`: `student`, `warden`, `chief_war
 ```
 
 1. **Create** (`POST /api/cases`, or `POST /api/cases/group` for a group incident): only wardens and chief wardens can register cases. The case starts as `status = pending_chief` and `assigned_to_role = chief_warden`. The backend gives it a public ID in the format `DAC-<year>-<00000 id>`. It notifies every chief warden and writes a timeline entry. All of this runs in one transaction.
+   - The wizard steps are Student Info → Incident Details → Evidence → **Student Statement** → Review → Submit.
+   - **Student Statement.** Each student either signs or declines.
+     - **Signs:** writes up to 5,000 characters, ticks "I confirm this statement was written by me and is true", and types their full name.
+     - **Declines:** the warden marks it, with an optional reason up to 500 characters.
+     - Editing the text after signing clears the signature.
+     - **Group incidents:** student chips with status (Pending / Signed / Declined), an "x of n done" count and a "Next student" button. One student's statement is shown at a time, so the device can be handed to each student. Next Step jumps to the first student still pending.
+     - The request carries `statement: { text, confirmed, signed_name }` or `{ declined: true, decline_reason }`, per student for groups.
+     - The backend re-checks everything in the same transaction:
+       - the typed name must match `users.name`, ignoring case and extra spaces;
+       - the time comes from the server;
+       - an invalid statement returns 400, and the whole group rolls back.
+     - The backend adds a timeline entry.
+     - Sending no statement is still accepted, for older clients.
+   - If the warden picked a policy offence, the request carries its rule id (`policy_rule_id`). The backend reads the rule and stores its text in `policy_offence` and its level in `offense_level`. A rule from another offence type is rejected (400).
 2. **Approve** (`PUT /api/cases/:id/approve`): only the role in `assigned_to_role` can act.
    - The chief warden moves the case to `pending_dsw`. The backend notifies every DSW.
    - The DSW moves the case to `pending_admin`. The backend notifies every admin.
    - The admin moves the case to `resolved`. The backend sets `resolved_by`, `resolved_by_role` and `resolved_at`.
    - Each step notifies the case creator and adds a timeline event.
 3. **Admin decision**: in `CaseDetail`, the admin enters penalty points, a fine and a decision text. The frontend sends `PUT /api/cases/:id` first, then `PUT /api/cases/:id/approve`. **Generate recommendation** asks Groq for a suggested penalty first (optional, advisory). Points must be a whole number ≥ 0.
+   - The recommendation sees the student's last 20 cases. Earlier **warnings count as prior offences** for repeat-offender purposes (they still add 0 points). The backend counts earlier cases, warnings, penalised, unresolved, same offence type and same policy offence itself. The card shows these counts and the AI's 1–2 sentence repeat-offence note, or "First offence".
    - **Points count only once the case is resolved.** Points entered or registered earlier (pending cases) do not change the student's total; a warning adds none. Re-opening, editing or deleting a resolved case updates the total.
 4. **Resolve with warning** (`PUT /api/cases/:id/warn`): the Chief Warden, DSW or Admin can close the case at their stage with a warning instead of forwarding it. The case gets `resolution_type = 'warning'`, every member sees "Resolved by … with a warning", and no points are added.
 5. **DAC meeting** (`POST /api/cases/:id/meetings`): while the case is `pending_admin`, the Admin picks a date, time and place. The student is notified in the app and by email, and a timeline entry is written.
@@ -194,9 +217,9 @@ Every rule has an **offence type** (`rules.offence_type`, one of `OFFENCE_TYPES`
 - Plagiarism
 - Other (typed by hand)
 
-On **Register Case**, the warden picks a type, then one of that type's rules. The backend reads that rule and stores its text in `cases.policy_offence` and its level in `cases.offense_level`; the client can't set either directly. Case details show the text as **Policy offence**. Points and fine show "—" until the DAC resolves the case.
+On **Register Case**, the warden picks a type, then one of that type's rules. The backend reads that rule and stores its text in `cases.policy_offence` and its level in `cases.offense_level`; the client can't set either directly. Case details show the text as **Policy offence**. Points and fine show "—" until the DAC resolves the case. A rule the admin adds in **System Config** appears under the type chosen for it. On start, bootstrap fills in the type for policy rules that have none. It also relabels cases stored under the old type names (Attendance, Disruption, Harassment, Vandalism) to the new names.
 
-`npm run cases:backfill-offence` gives older cases (registered before this) a policy offence of their type, picked at random among the rules at the case's own level. Without `--apply` it is a dry run. It only fills empty values, so you can run it again safely (for example after seeding a fresh database). Cases of type Other are skipped. A rule the admin adds in **System Config** appears under the type chosen for it. On start, bootstrap fills in the type for policy rules that have none. It also relabels cases stored under the old type names (Attendance, Disruption, Harassment, Vandalism) to the new names.
+`npm run cases:backfill-offence` gives older cases (registered before this) a policy offence of their type, picked at random among the rules at the case's own level. Where the policy has no rule at that level, the nearest level is used (e.g. Plagiarism Level 2). Without `--apply` it is a dry run. It only fills empty values, so you can run it again safely (for example after seeding a fresh database). Cases of type Other are skipped. It also moves any `Policy offence: …` note line into the column, and fills an empty offence level from the chosen rule.
 
 **Disciplinary Action Policy, Version 02** (BMU/RO/2025/0051, 19 February 2025):
 
@@ -231,6 +254,10 @@ DSW and Admin cannot register cases. In Admin Settings, **Rules & Policies** (`r
 After login, `Login.jsx` sends each role to `/student-dashboard`, `/warden-dashboard`, `/chief-dashboard`, `/dsw-dashboard` or `/admin-dashboard`; these redirect to the landing pages above. Chatbot case links use `/view-case/:id` (admin, DSW), `/warden/view/:id` and `/chief-warden/view/:id`.
 
 **Dashboards.** The four count cards are all-time. High & Critical counts only open (not resolved) cases. The table shows all cases for the Admin, the last 10 days for the Chief Warden and DSW, and only the cases a warden registered for that warden. **Case Trend** (7D / 30D / 3M / 1Y) and **Case Distribution** show a card with the period's count or the status share on hover (keyboard: Tab to the trend chart, then ← / →).
+
+The right column holds **Needs Your Decision** (wardens: Your Recent Registrations), then **Recently Viewed**, then Case Distribution. Recently Viewed has two tabs: **Cases** and **Students**. Opening a case or a student profile adds it, up to 8 per tab, newest first. Each item links straight to the case (using the role's case route) or the profile. The tabs work with ← / →. The list is stored in the browser (`localStorage`), per signed-in user, so it does not follow the user to another browser. Each item shows the details from when it was opened.
+
+**Case page.** Incident Details shows the **Policy offence** and the offence level. A **Student Statement** card shows the statement with "Signed by … · date", or that the student declined (with the reason), or "No statement recorded" for older cases. **Additional details** appears only for other notes (victim, property, damage cost). Penalty points and fine show "—" until the case is resolved. The timeline marks recorded events with a ✓ and lists the workflow steps still to come with an empty circle and "Pending".
 
 **Student dashboard.** Penalty Points (resolved points only), case counts, **Total fine due** with **Pay now** (opens the list of unpaid fines), My Cases, and Payment History.
 
@@ -326,7 +353,7 @@ npm run rag:ingest
 
 - **Enums**: `user_role`, `case_status` (`pending_chief`, `pending_dsw`, `pending_admin`, `resolved`), `case_severity` (`low`, `medium`, `high`, `critical`), `program_type` (`btech`, `bba`, `mba`, `ballb`, `bcom`).
 - **Tables**: `users`, `cases`, `case_timeline`, `rules`, `evidence`, `notifications`, `rag_documents`, `case_meetings`, `case_payments`, `payment_transactions`.
-- **Newer columns**: `cases.resolution_type` (`'warning'` when closed with a warning), `cases.incident_group_id`.
+- **Newer columns**: `cases.resolution_type` (`'warning'` when closed with a warning), `cases.incident_group_id`, `cases.policy_offence` (text snapshot of the chosen rule), `cases.student_statement` / `statement_declined` / `statement_decline_reason` / `statement_signed_name` / `statement_signed_at` (the student's statement and e-signature; all NULL for cases registered before the step), `rules.offence_type` (the Register Case offence type a rule is listed under).
 - **Indexes** for the dashboard and case page: `cases(created_by)`, `cases(incident_group_id)`, `case_timeline(case_id)`, `evidence(case_id)`, `notifications(user_id, created_at)`, `case_meetings(case_id)`, `case_meetings(student_id, scheduled_at)`.
 - **`case_payments`** (demo fine payments): FKs to `users` and `cases` with `ON DELETE RESTRICT` (a paid case or its student cannot be deleted), unique `transaction_id` (`TXN-YYYYMMDD-XXXXXXXX`; older `DEMO-…` ids are still accepted) and `idempotency_key`, CHECKs on amount, `payment_status` (`PENDING`/`SUCCESS`/`FAILED`) and `payment_type` (`DEMO` only), and a partial unique index allowing **one `SUCCESS` payment per case**. The amount is copied from `cases.fine` (the Admin's decision) at payment time.
 - **`payment_transactions`** (consolidated payments): one header per transaction (`transaction_id`, `total_amount`, `case_count`, `idempotency_key`); its cases are `case_payments` rows linked by `case_payments.payment_transaction_id` (NULL for single-case payments). The one-`SUCCESS`-per-case index covers both kinds.
@@ -422,6 +449,13 @@ cd backend && node seedPasswords.cjs
 
 These are development credentials only. Never use them in a deployed environment.
 
+After seeding, start the backend once, so bootstrap adds the newer columns and relabels old offence types. Then, as Admin, open **System Config → Load DAC Policy**: the seed has only 5 old questionnaire rules, so Register Case lists no policy offences until the policy rules are loaded. Finally, give the seeded cases a policy offence:
+
+```bash
+npm run cases:backfill-offence              # dry run: shows what would change
+npm run cases:backfill-offence -- --apply   # writes, in one transaction
+```
+
 ### 4. Ingest the chatbot knowledge base (optional)
 
 ```bash
@@ -446,6 +480,7 @@ node scripts/test-all-10-queries.js    # 10 reference chatbot questions (runs bo
 node scripts/test-payments.js          # Demo payment checks; all writes are rolled back
 node scripts/test-search.js            # Global search checks (read-only)
 node scripts/test-points.js            # DAC points rule checks; all writes are rolled back
+npm run cases:backfill-offence         # Dry run; add -- --apply to fill empty policy offences
 POINTS_TEST_DISPOSABLE_DB=1 node scripts/test-points.js   # + committing two-connection race test (throwaway DB only)
 ```
 

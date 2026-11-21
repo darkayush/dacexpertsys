@@ -329,6 +329,46 @@ async function resolvePolicyRule(client, policyRuleId, offenseType) {
   return { policyOffence: rule.question, offenseLevel: levelFromCategory(rule.category) };
 }
 
+export const STATEMENT_MAX_LENGTH = 5000;
+export const DECLINE_REASON_MAX_LENGTH = 500;
+// Names match ignoring case and extra spaces ("  aarav  SHARMA" = "Aarav Sharma").
+export const normaliseSignName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function invalidStatement(message) {
+  const error = new Error(message);
+  error.code = 'INVALID_STATEMENT';
+  error.status = 400;
+  return error;
+}
+
+// The student's statement from Register Case: either signed (text + confirmation tick + typed
+// full name that matches the student) or declined (optional reason). Not sending one at all is
+// allowed for older clients and scripts; the case then has no statement.
+async function resolveStatement(client, statement, studentId) {
+  const none = { text: null, declined: null, reason: null, signedName: null, recorded: false };
+  if (statement === undefined || statement === null) return none;
+  if (typeof statement !== 'object') throw invalidStatement('The student statement is not valid.');
+  if (statement.declined === true) {
+    const reason = String(statement.decline_reason || '').trim();
+    if (reason.length > DECLINE_REASON_MAX_LENGTH) {
+      throw invalidStatement(`The reason for declining can be at most ${DECLINE_REASON_MAX_LENGTH} characters.`);
+    }
+    return { text: null, declined: true, reason: reason || null, signedName: null, recorded: true };
+  }
+  const text = String(statement.text || '').trim();
+  if (!text) throw invalidStatement('The student statement is empty. Enter it, or mark that the student declined.');
+  if (text.length > STATEMENT_MAX_LENGTH) {
+    throw invalidStatement(`The student statement can be at most ${STATEMENT_MAX_LENGTH} characters.`);
+  }
+  if (statement.confirmed !== true) throw invalidStatement('The student must tick the box confirming the statement is their own.');
+  const student = (await client.query('SELECT name FROM users WHERE id = $1', [studentId])).rows[0];
+  const signedName = String(statement.signed_name || '').trim().replace(/\s+/g, ' ');
+  if (!student || !signedName || normaliseSignName(signedName) !== normaliseSignName(student.name)) {
+    throw invalidStatement('The signature must be the student\'s full name as registered.');
+  }
+  return { text, declined: false, reason: null, signedName, recorded: true };
+}
+
 // Inserts one case inside an open transaction: gives it a public DAC-<year>-<id> number,
 // notifies the chief wardens and writes the first timeline entry.
 async function insertCaseWithClient(client, payload, requesterId, requesterRole, { groupSize = 0 } = {}) {
@@ -348,9 +388,11 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     notes = null,
     incident_group_id: incidentGroupId = null,
     policy_rule_id: policyRuleId = null,
+    statement = null,
   } = payload;
   const validPenaltyPoints = validatePenaltyPoints(penaltyPoints);
   const { policyOffence, offenseLevel } = await resolvePolicyRule(client, policyRuleId, offenseType);
+  const studentStatement = await resolveStatement(client, statement, studentId);
 
   const query = `
     INSERT INTO cases (
@@ -374,9 +416,15 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
       notes,
       incident_group_id,
       policy_offence,
-      offense_level
+      offense_level,
+      student_statement,
+      statement_declined,
+      statement_decline_reason,
+      statement_signed_name,
+      statement_signed_at
     )
-    VALUES ($1, $2, $12, $3, $2, $4, $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20)
+    VALUES ($1, $2, $12, $3, $2, $4, $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, CASE WHEN $25::boolean THEN NOW() END)
     RETURNING *
   `;
 
@@ -401,6 +449,11 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     incidentGroupId,
     policyOffence,
     offenseLevel,
+    studentStatement.text,
+    studentStatement.declined,
+    studentStatement.reason,
+    studentStatement.signedName,
+    studentStatement.recorded,
   ];
   const result = await client.query(query, values);
   // Give app-created cases the same public ID format as imported ones: DAC-<year>-<5-digit id>.
@@ -435,6 +488,19 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     },
     client,
   );
+
+  if (studentStatement.recorded) {
+    await createCaseTimelineService(
+      {
+        caseId: createdCase.id,
+        event: studentStatement.declined
+          ? 'Student declined to give a statement.'
+          : `Student statement recorded (signed by ${studentStatement.signedName}).`,
+        performedBy: requesterId,
+      },
+      client,
+    );
+  }
 
   return createdCase;
 }
@@ -486,6 +552,8 @@ export async function createGroupCasesService(students, shared, requesterId, req
           location: student.location ?? shared.location ?? null,
           alcohol_reading: student.alcohol_reading !== undefined ? student.alcohol_reading : (shared.alcohol_reading ?? null),
           notes: student.notes !== undefined ? student.notes : (shared.notes ?? null),
+          // Each student signs (or declines) their own statement; never shared across the group.
+          statement: student.statement ?? null,
           incident_group_id: groupId,
         },
         requesterId,

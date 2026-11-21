@@ -535,6 +535,34 @@ export default function CaseDetail() {
                   </div>
                 </Card>
 
+                <Card title="Student Statement" icon="edit_note">
+                  <div className="px-6 pb-6">
+                    {caseItem.statement_declined ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                        <p className="text-sm font-medium text-amber-900">The student declined to give a statement.</p>
+                        {caseItem.statement_decline_reason && (
+                          <p className="text-sm text-amber-900 mt-1">Reason: {caseItem.statement_decline_reason}</p>
+                        )}
+                        {caseItem.statement_signed_at && (
+                          <p className="text-xs text-amber-800 mt-1">Recorded {formatDateTime(caseItem.statement_signed_at)}</p>
+                        )}
+                      </div>
+                    ) : caseItem.student_statement ? (
+                      <>
+                        <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-line">{caseItem.student_statement}</p>
+                        <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-emerald-700">
+                          <Icon name="verified" className="text-[16px]" />
+                          Signed by <span className="font-serif italic text-sm">{caseItem.statement_signed_name}</span>
+                          {caseItem.statement_signed_at ? ` · ${formatDateTime(caseItem.statement_signed_at)}` : ''}
+                          {' '}· confirmed as their own statement
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-500">No statement recorded.</p>
+                    )}
+                  </div>
+                </Card>
+
                 <Card title="Timeline" icon="history">
                   {timeline.length === 0 && pending.length === 0 ? (
                     <EmptyState icon="history">No timeline entries yet.</EmptyState>

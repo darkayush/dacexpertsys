@@ -275,6 +275,12 @@ export async function ensureWorkflowSchema() {
     ['ALTER TABLE rules ADD COLUMN IF NOT EXISTS offence_type TEXT'],
     // Offence picked from Rules & Policies (text snapshot, so later rule edits keep the case's record).
     ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS policy_offence TEXT'],
+    // Student statement from Register Case (signed with a typed name, or declined).
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS student_statement TEXT'],
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS statement_declined BOOLEAN'],
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS statement_decline_reason TEXT'],
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS statement_signed_name TEXT'],
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS statement_signed_at TIMESTAMP'],
     [
       `UPDATE rules r SET offence_type = p.offence_type
        FROM unnest($1::text[], $2::text[]) AS p(question, offence_type)

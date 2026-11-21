@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import pool from '../config/db.js';
+import { levelFromCategory } from '../config/dacPolicy.js';
 import {
   createNotificationsForRoleService,
   createNotificationService,
@@ -308,6 +309,26 @@ export function validatePenaltyPoints(value) {
   return points;
 }
 
+// The offence picked from Rules & Policies on Register Case. The rule is read here, not taken
+// from the client, so the stored offence text and level always come from the system config.
+// It must belong to the case's offence type.
+async function resolvePolicyRule(client, policyRuleId, offenseType) {
+  if (policyRuleId === null || policyRuleId === undefined || policyRuleId === '') {
+    return { policyOffence: null, offenseLevel: null };
+  }
+  const ruleId = Number(policyRuleId);
+  const rule = Number.isInteger(ruleId) && ruleId > 0
+    ? (await client.query('SELECT question, category, offence_type FROM rules WHERE id = $1', [ruleId])).rows[0]
+    : null;
+  if (!rule || rule.offence_type !== offenseType) {
+    const error = new Error('The selected offence does not belong to this offence type. Reload the page and choose it again.');
+    error.code = 'INVALID_POLICY_RULE';
+    error.status = 400;
+    throw error;
+  }
+  return { policyOffence: rule.question, offenseLevel: levelFromCategory(rule.category) };
+}
+
 // Inserts one case inside an open transaction: gives it a public DAC-<year>-<id> number,
 // notifies the chief wardens and writes the first timeline entry.
 async function insertCaseWithClient(client, payload, requesterId, requesterRole, { groupSize = 0 } = {}) {
@@ -326,8 +347,10 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     alcohol_reading: alcoholReading = null,
     notes = null,
     incident_group_id: incidentGroupId = null,
+    policy_rule_id: policyRuleId = null,
   } = payload;
   const validPenaltyPoints = validatePenaltyPoints(penaltyPoints);
+  const { policyOffence, offenseLevel } = await resolvePolicyRule(client, policyRuleId, offenseType);
 
   const query = `
     INSERT INTO cases (
@@ -349,9 +372,11 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
       incident_location,
       alcohol_reading,
       notes,
-      incident_group_id
+      incident_group_id,
+      policy_offence,
+      offense_level
     )
-    VALUES ($1, $2, $12, $3, $2, $4, $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $12, $3, $2, $4, $5, $6, $7, $8, $9, $10, $11, $13, $14, $15, $16, $17, $18, $19, $20)
     RETURNING *
   `;
 
@@ -374,6 +399,8 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     alcoholReading,
     notes,
     incidentGroupId,
+    policyOffence,
+    offenseLevel,
   ];
   const result = await client.query(query, values);
   // Give app-created cases the same public ID format as imported ones: DAC-<year>-<5-digit id>.
@@ -776,12 +803,11 @@ export async function getStudentProfileService(enrollmentNo) {
   const cases = casesResult.rows;
 
   // DAC points count only once a case is resolved, and never for a warning (same rule as the
-  // users.total_points trigger). Points on cases still under review are reported separately.
+  // users.total_points trigger).
   const counts = (c) => c.status === 'resolved' && c.resolution_type !== 'warning';
   const summary = {
     total_cases: cases.length,
     total_points: cases.filter(counts).reduce((sum, c) => sum + Number(c.penalty_points || 0), 0),
-    pending_points: cases.filter((c) => c.status !== 'resolved').reduce((sum, c) => sum + Number(c.penalty_points || 0), 0),
     active_cases: cases.filter((c) => ACTIVE_CASE_STATUSES.includes(c.status)).length,
     resolved_cases: cases.filter((c) => c.status === 'resolved').length,
   };

@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS cases (
     resolution_type TEXT,
     -- Shared by the separate cases registered together as one group incident (e.g. GRP-2026-1A2B3C4D).
     incident_group_id TEXT,
+    -- Offence picked from Rules & Policies on Register Case (text snapshot of rules.question).
+    policy_offence TEXT,
     severity_score FLOAT,
     evidence_url TEXT,
     created_at TIMESTAMP DEFAULT NOW(),

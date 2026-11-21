@@ -7,7 +7,7 @@ import StaffPaymentStatus from '../components/payments/StaffPaymentStatus';
 import { scrollToElement } from '../hooks/useLenis';
 import { Avatar, Button, Card, EmptyState, Icon, SeverityPill, StatusText } from '../components/cases/parts';
 import StudentProfileLink from '../components/cases/StudentProfileLink';
-import { caseLink, formatDate, formatDateTime, fmtNumber, safeReturnPath, statusLabel, toTitleCase } from '../components/cases/caseUi';
+import { caseFineText, caseLink, casePointsText, formatDate, formatDateTime, safeReturnPath, statusLabel, toTitleCase } from '../components/cases/caseUi';
 import { useAuth } from '../context/AuthContext';
 import { approveCase, getCaseById, getCaseEvidence, getCaseMeetings, getCaseTimeline, getGroupCases, scheduleCaseMeeting, updateCase, warnCase } from '../services/api';
 
@@ -29,14 +29,29 @@ const LIST_LINKS = {
 
 const ROLE_NAMES = { warden: 'Warden', chief_warden: 'Chief Warden', dsw: 'DSW', admin: 'Admin' };
 
+// Timeline entries for workflow steps the case has not completed yet (shown with an empty circle).
+const PENDING_STEP_LABELS = {
+  pending_chief: 'Chief Warden review',
+  pending_dsw: 'DSW review',
+  pending_admin: 'Admin decision',
+  resolved: 'Case resolved',
+};
+
+function pendingSteps(status) {
+  if (status === 'resolved') return [];
+  const current = STEPS.findIndex((s) => s.key === status);
+  if (current < 0) return [];
+  return STEPS.slice(current).map((s) => ({ key: s.key, label: PENDING_STEP_LABELS[s.key] || s.label }));
+}
+
 const FORWARD_LABELS = {
   chief_warden: { button: 'Approve & forward to DSW', done: 'Case forwarded to the DSW.' },
   dsw: { button: 'Approve & forward to Admin', done: 'Case forwarded to the Admin for a final decision.' },
 };
 
-function Field({ label, children }) {
+function Field({ label, children, className = '' }) {
   return (
-    <div>
+    <div className={className}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-1 text-sm text-slate-900">{children || '—'}</dd>
     </div>
@@ -375,6 +390,7 @@ export default function CaseDetail() {
   };
 
   const resolvedWithWarning = status === 'resolved' && caseItem?.resolution_type === 'warning';
+  const pending = caseItem ? pendingSteps(status) : [];
 
   const resolveWithWarning = () => {
     const confirmed = window.confirm(
@@ -458,6 +474,7 @@ export default function CaseDetail() {
 
                 <Card title="Incident Details" icon="report">
                   <dl className="px-6 pb-6 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
+                    <Field label="Policy offence" className="col-span-2 md:col-span-3">{caseItem.policy_offence}</Field>
                     <Field label="Offence">{toTitleCase(caseItem.offense_type)}</Field>
                     <Field label="Substance">{caseItem.substance_type}</Field>
                     <Field label="Offence level">{caseItem.offense_level ? `Level ${caseItem.offense_level}` : null}</Field>
@@ -465,8 +482,8 @@ export default function CaseDetail() {
                     <Field label="Incident time">{caseItem.incident_time ? String(caseItem.incident_time).slice(0, 5) : null}</Field>
                     <Field label="Location">{caseItem.incident_location || caseItem.location}</Field>
                     {caseItem.alcohol_reading != null && <Field label="Alcohol reading">{caseItem.alcohol_reading}</Field>}
-                    <Field label="Penalty points">{fmtNumber(caseItem.penalty_points)}</Field>
-                    <Field label="Fine">₹{fmtNumber(caseItem.fine)}</Field>
+                    <Field label="Penalty points">{casePointsText(caseItem)}</Field>
+                    <Field label="Fine">{caseFineText(caseItem)}</Field>
                   </dl>
                   <div className="px-6 pb-6 border-t border-slate-100 pt-5 space-y-4">
                     <div>
@@ -512,14 +529,17 @@ export default function CaseDetail() {
                 </Card>
 
                 <Card title="Timeline" icon="history">
-                  {timeline.length === 0 ? (
+                  {timeline.length === 0 && pending.length === 0 ? (
                     <EmptyState icon="history">No timeline entries yet.</EmptyState>
                   ) : (
                     <ol className="px-6 pb-6">
+                      {/* Recorded events are done: filled circle with a tick. */}
                       {timeline.map((event, i) => (
                         <li key={event.id} className="relative flex gap-4 pb-5 last:pb-0">
-                          {i < timeline.length - 1 && <span className="absolute left-[7px] top-4 bottom-0 w-px bg-slate-200" />}
-                          <span className="relative mt-1 h-[15px] w-[15px] shrink-0 rounded-full border-2 border-[#3d3793] bg-white" />
+                          {i < timeline.length - 1 + pending.length && <span className="absolute left-[9px] top-5 bottom-0 w-px bg-slate-200" />}
+                          <span className="relative mt-0.5 h-5 w-5 shrink-0 rounded-full bg-[#3d3793] text-white flex items-center justify-center" aria-label="Completed">
+                            <Icon name="check" className="text-[14px]" />
+                          </span>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-slate-900">{event.event}</p>
                             <p className="text-xs text-slate-500 mt-0.5">
@@ -529,6 +549,17 @@ export default function CaseDetail() {
                               · {formatDateTime(event.timestamp)}
                             </p>
                             {event.notes && <p className="text-xs text-slate-600 mt-1">{event.notes}</p>}
+                          </div>
+                        </li>
+                      ))}
+                      {/* Workflow steps still to come: empty circle. */}
+                      {pending.map((step, i) => (
+                        <li key={`pending-${step.key}`} className="relative flex gap-4 pb-5 last:pb-0">
+                          {i < pending.length - 1 && <span className="absolute left-[9px] top-5 bottom-0 w-px bg-slate-200" />}
+                          <span className="relative mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-slate-300 bg-white" aria-label="Pending" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-400">{step.label}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Pending</p>
                           </div>
                         </li>
                       ))}

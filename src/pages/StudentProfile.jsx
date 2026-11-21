@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import DACLayout from '../components/layout/DACLayout';
 import { Avatar, Card, EmptyState, Icon, SeverityPill, StatusText } from '../components/cases/parts';
-import { caseLink, fmtNumber, formatDate, statusLabel, toTitleCase } from '../components/cases/caseUi';
+import { caseFineText, caseLink, casePointsText, fmtNumber, formatDate, statusLabel, toTitleCase } from '../components/cases/caseUi';
 import { useAuth } from '../context/AuthContext';
 import { getStudentProfile } from '../services/api';
 
@@ -24,7 +24,7 @@ function Field({ label, children }) {
   );
 }
 
-function StatTile({ icon, label, value, note }) {
+function StatTile({ icon, label, value }) {
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center gap-4">
       <span className="h-11 w-11 shrink-0 rounded-xl bg-[#f0eefc] text-[#3d3793] flex items-center justify-center">
@@ -33,7 +33,6 @@ function StatTile({ icon, label, value, note }) {
       <div>
         <p className="text-xs text-slate-500">{label}</p>
         <p className="text-2xl font-semibold text-slate-900">{value}</p>
-        {note && <p className="text-[11px] text-amber-700">{note}</p>}
       </div>
     </div>
   );
@@ -118,7 +117,6 @@ export default function StudentProfile() {
                 icon="report"
                 label="Total DAC penalty points"
                 value={fmtNumber(summary.total_points)}
-                note={summary.pending_points > 0 ? `+${fmtNumber(summary.pending_points)} pending resolution` : null}
               />
               <StatTile icon="pending_actions" label="Active cases" value={fmtNumber(summary.active_cases)} />
               <StatTile icon="task_alt" label="Resolved cases" value={fmtNumber(summary.resolved_cases)} />
@@ -161,12 +159,10 @@ export default function StudentProfile() {
 
                       <div className="text-xs text-slate-600 space-y-0.5">
                         <p>
-                          Points: <strong className="text-slate-900">{fmtNumber(c.penalty_points)}</strong>
-                          {/* Points count towards the total only once the case is resolved (never for a warning). */}
-                          {c.status !== 'resolved' && <span className="text-amber-700"> (after resolution)</span>}
+                          {/* Points and fine are shown once the DAC resolves the case (a warning counts no points). */}
+                          Points: <strong className="text-slate-900">{casePointsText(c)}</strong>
                           {c.status === 'resolved' && c.resolution_type === 'warning' && <span className="text-slate-500"> (warning: not counted)</span>}
-                          {' '}· Fine: ₹
-                          {fmtNumber(c.fine)}
+                          {' '}· Fine: {caseFineText(c)}
                         </p>
                         <p className="text-slate-500">
                           Stage: {statusLabel(c.status)}

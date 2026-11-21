@@ -4,6 +4,7 @@ import { askChatbot } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { OPEN_ASSISTANT_EVENT } from '../lib/assistant';
 import StudentProfileLink from './cases/StudentProfileLink';
+import { caseFineText, casePointsText } from './cases/caseUi';
 
 const DEFAULT_SUGGESTIONS = [
   'What are the DAC points for weed?',
@@ -41,8 +42,8 @@ function CaseCard({ item, role, navigate }) {
         <p><span className="text-[#94a3b8] font-medium">Roll No:</span> <strong className="font-mono">{item.enrollment_no || 'N/A'}</strong></p>
         <p><span className="text-[#94a3b8] font-medium">Offense:</span> {item.offense_type || 'N/A'}</p>
         <p><span className="text-[#94a3b8] font-medium">Substance:</span> {item.substance_type || '—'}</p>
-        <p><span className="text-[#94a3b8] font-medium">Points:</span> <strong className="text-red-600">{item.penalty_points ?? 0} pts</strong></p>
-        <p><span className="text-[#94a3b8] font-medium">Fine:</span> ₹{item.fine ?? 0}</p>
+        <p><span className="text-[#94a3b8] font-medium">Points:</span> <strong className="text-red-600">{casePointsText(item)}{item.status === 'resolved' ? ' pts' : ''}</strong></p>
+        <p><span className="text-[#94a3b8] font-medium">Fine:</span> {caseFineText(item)}</p>
         <p><span className="text-[#94a3b8] font-medium">Hostel:</span> {item.hostel || 'N/A'}</p>
         <p><span className="text-[#94a3b8] font-medium">Date:</span> {dateStr}</p>
       </div>

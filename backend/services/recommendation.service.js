@@ -66,6 +66,7 @@ function describeCase(c) {
   const lines = [
     ['Case', c.external_case_id || `#${c.id}`],
     ['Offence type', c.offense_type],
+    ['Policy offence (from Rules & Policies)', c.policy_offence],
     ['Substance', c.substance_type],
     ['Recorded severity', c.severity],
     ['Recorded offence level', c.offense_level],

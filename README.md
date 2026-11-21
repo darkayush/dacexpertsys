@@ -194,7 +194,9 @@ Every rule has an **offence type** (`rules.offence_type`, one of `OFFENCE_TYPES`
 - Plagiarism
 - Other (typed by hand)
 
-On **Register Case**, the warden picks a type, then one of that type's rules. The chosen offence is saved in the case notes; the DAC still sets the final level and points. A rule the admin adds in **System Config** appears under the type chosen for it. On start, bootstrap fills in the type for policy rules that have none. It also relabels cases stored under the old type names (Attendance, Disruption, Harassment, Vandalism) to the new names.
+On **Register Case**, the warden picks a type, then one of that type's rules. The backend reads that rule and stores its text in `cases.policy_offence` and its level in `cases.offense_level`; the client can't set either directly. Case details show the text as **Policy offence**. Points and fine show "—" until the DAC resolves the case.
+
+`npm run cases:backfill-offence` gives older cases (registered before this) a policy offence of their type, picked at random among the rules at the case's own level. Without `--apply` it is a dry run. It only fills empty values, so you can run it again safely (for example after seeding a fresh database). Cases of type Other are skipped. A rule the admin adds in **System Config** appears under the type chosen for it. On start, bootstrap fills in the type for policy rules that have none. It also relabels cases stored under the old type names (Attendance, Disruption, Harassment, Vandalism) to the new names.
 
 **Disciplinary Action Policy, Version 02** (BMU/RO/2025/0051, 19 February 2025):
 

@@ -260,6 +260,19 @@ export const OFFENCE_TYPE_RENAMES = {
 const UFM_LEVEL_POINTS = { I: 10, II: 25, 'III/IV': 50 };
 
 /**
+ * DAC level (1-4) of a rule from its category: "Level 3" -> 3, "Exam Cat. 3 (DAC Level II)" -> 2,
+ * "Plagiarism (DAC Level III)" -> 3. "III/IV" -> 3 (the minimum, matching the rule's points).
+ * Returns null when the category names no level.
+ */
+export function levelFromCategory(category) {
+  const text = String(category || '');
+  const plain = /^Level\s+([1-4])\b/i.exec(text);
+  if (plain) return Number(plain[1]);
+  const roman = /DAC Level\s+(III|II|IV|I)\b/i.exec(text);
+  return roman ? { I: 1, II: 2, III: 3, IV: 4 }[roman[1].toUpperCase()] : null;
+}
+
+/**
  * Admin Rules list, built from both PDFs. weight = penalty points.
  *  - DAC Policy v2: every offence, category "Level N".
  *  - Unfair Means Policy: exam offences in Categories 2-4 (the ones mapped to a DAC level),

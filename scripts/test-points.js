@@ -273,8 +273,8 @@ if (withPending) {
   const profile = await getStudentProfileService(withPending.enrollment_no);
   const [stored] = await q(pool, 'SELECT total_points FROM users WHERE enrollment_no = $1', [withPending.enrollment_no]);
   check('profile total equals the stored total', profile.summary.total_points === stored.total_points, `${profile.summary.total_points} vs ${stored.total_points}`);
-  const pendingSum = profile.cases.filter((x) => x.status !== 'resolved').reduce((s, x) => s + Number(x.penalty_points || 0), 0);
-  check('profile total excludes unresolved cases; they are reported as pending_points', profile.summary.pending_points === pendingSum && pendingSum > 0);
+  const resolvedSum = profile.cases.filter((x) => x.status === 'resolved' && x.resolution_type !== 'warning').reduce((s, x) => s + Number(x.penalty_points || 0), 0);
+  check('profile total excludes unresolved cases (their points are not reported)', profile.summary.total_points === resolvedSum && !('pending_points' in profile.summary));
 } else {
   skip('profile summary checks', 'no student with a pending case that carries points');
 }

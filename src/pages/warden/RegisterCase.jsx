@@ -1592,8 +1592,6 @@ export default function RegisterCase() {
 
       // Offense-specific details that have no dedicated column.
       const noteLines = [];
-      // The offence picked from Rules & Policies; the DAC sets the final level and points.
-      if (policyRule) noteLines.push(`Policy offence: ${policyRule.question} (${policyRule.category || 'no level'}, ${policyRule.weight} pts)`);
       if (alcoholReadingRaw && alcoholReadingNumber === null) noteLines.push(`Alcohol reading: ${alcoholReadingRaw}`);
       if (form.offenseType === HARASSMENT_TYPE) {
         noteLines.push(`Victim name: ${form.victimName}`);
@@ -1611,6 +1609,8 @@ export default function RegisterCase() {
       // Incident details shared by every case registered from this form.
       const shared = {
         offense_type: form.offenseType === 'Other' ? (form.customOffense || 'Other') : form.offenseType,
+        // Offence from Rules & Policies; the backend stores its text and level. The DAC sets the points.
+        policy_rule_id: policyRule ? policyRule.id : null,
         description: form.description || null,
         incident_date: today,
         incident_time: form.incidentTime || null,

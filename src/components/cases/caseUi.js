@@ -123,3 +123,9 @@ export function pageList(page, totalPages) {
 }
 
 export const fmtNumber = (n) => Number(n || 0).toLocaleString('en-IN');
+
+// A case's points and fine are set by the DAC and are final only once it is resolved; until
+// then show a dash instead of the provisional (often 0) value.
+const isResolved = (c) => String(c?.status || '').toLowerCase() === 'resolved';
+export const casePointsText = (c) => (isResolved(c) ? fmtNumber(c.penalty_points) : '—');
+export const caseFineText = (c) => (isResolved(c) ? `₹${fmtNumber(c.fine)}` : '—');

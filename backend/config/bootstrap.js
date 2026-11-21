@@ -273,6 +273,8 @@ export async function ensureWorkflowSchema() {
   const renames = Object.entries(OFFENCE_TYPE_RENAMES);
   const offenceTypeStatements = [
     ['ALTER TABLE rules ADD COLUMN IF NOT EXISTS offence_type TEXT'],
+    // Offence picked from Rules & Policies (text snapshot, so later rule edits keep the case's record).
+    ['ALTER TABLE cases ADD COLUMN IF NOT EXISTS policy_offence TEXT'],
     [
       `UPDATE rules r SET offence_type = p.offence_type
        FROM unnest($1::text[], $2::text[]) AS p(question, offence_type)

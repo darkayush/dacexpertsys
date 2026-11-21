@@ -9,6 +9,7 @@
     "server:dev": "node --watch backend/server.js",
     "seed:dac": "node scripts/seed-dac.js",
     "rag:ingest": "node scripts/ingest-rag.js",
+    "cases:backfill-offence": "node scripts/backfill-policy-offence.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

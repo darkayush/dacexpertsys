@@ -17,8 +17,10 @@ Recommend a penalty for ONE case, strictly based on the official policy text, th
 - Use only DAC levels 1-4 with the policy's exact points and fines (Level 1: 10 pts / Rs 1000, Level 2: 25 / 2500, Level 3: 50 / 5000, Level 4: 100 / 10000), unless "no_penalty" or "warning" is clearly better.
 - Exam offences: follow the Unfair Means Policy category and its DAC level.
 - Consider prior cases: the policy says repeat offenders may be punished to a greater extent, and a first-time Level 1 keeps the scholarship.
+- Earlier warnings count as prior offences for repeat-offender purposes, even though they added no points. Use the REPEAT OFFENCES counts as given.
 - Say whether the student's total points after this case would reach 100 (barred from placement) or 200 (expulsion).
 - Never invent facts. If information is missing, say so in "missing_information".
+- Refer to the student as "the student"; do not use gendered pronouns.
 - The final decision belongs to the Committee; you only advise.
 Reply with ONE JSON object and nothing else, with exactly these keys:
 {
@@ -34,6 +36,7 @@ Reply with ONE JSON object and nothing else, with exactly these keys:
   "policy_references": ["quote or cite the exact policy line used", ...],
   "points_after_case": number,
   "threshold_warning": "string or null",
+  "repeat_offence_note": "1-2 sentences on the student's earlier offences (warnings included) and how they affect this penalty, or null if this is a first offence",
   "missing_information": ["string", ...],
   "confidence": "Low" | "Medium" | "High"
 }`;
@@ -122,6 +125,7 @@ function normalise(raw) {
     policy_references: asStringList(raw?.policy_references),
     points_after_case: clampNumber(raw?.points_after_case, 0, 10000),
     threshold_warning: raw?.threshold_warning ? String(raw.threshold_warning) : null,
+    repeat_offence_note: raw?.repeat_offence_note ? String(raw.repeat_offence_note) : null,
     missing_information: asStringList(raw?.missing_information),
     confidence: ['Low', 'Medium', 'High'].includes(raw?.confidence) ? raw.confidence : 'Medium',
   };
@@ -184,7 +188,7 @@ export async function generateCaseRecommendationService(caseId, { refresh = fals
 async function buildRecommendation(target) {
   const [historyResult, rulesResult] = await Promise.all([
     pool.query(
-      `SELECT id, offense_type, severity, penalty_points, status, resolution_type, incident_date, created_at
+      `SELECT id, offense_type, policy_offence, severity, penalty_points, status, resolution_type, incident_date, created_at
        FROM cases
        WHERE student_id = $1 AND id <> $2
        ORDER BY COALESCE(incident_date, created_at::date) DESC
@@ -201,10 +205,26 @@ async function buildRecommendation(target) {
   const historyText = history.length
     ? history.map((h) => {
       const date = new Date(h.incident_date || h.created_at).toISOString().slice(0, 10);
-      const outcome = h.resolution_type === 'warning' ? 'resolved with warning' : h.status;
-      return `- ${date}: ${h.offense_type || 'unknown'} (severity ${h.severity}, ${h.penalty_points || 0} points, ${outcome})`;
+      const offence = `${h.offense_type || 'unknown'}${h.policy_offence ? ` - ${h.policy_offence}` : ''}`;
+      const outcome = h.resolution_type === 'warning'
+        ? 'resolved with a warning (0 points)'
+        : h.status === 'resolved' ? `resolved, ${h.penalty_points || 0} points` : `not resolved yet (${h.status})`;
+      return `- ${date}: ${offence} (severity ${h.severity}, ${outcome})`;
     }).join('\n')
     : 'No earlier cases.';
+
+  // Repeat-offence facts, counted here so the model and the card use exact numbers.
+  // Warnings are prior offences too, even though they carry no points.
+  const sameType = (h) => h.offense_type && target.offense_type
+    && h.offense_type.toLowerCase() === target.offense_type.toLowerCase();
+  const repeatOffences = {
+    earlier_cases: history.length,
+    warnings: history.filter((h) => h.status === 'resolved' && h.resolution_type === 'warning').length,
+    penalised: history.filter((h) => h.status === 'resolved' && h.resolution_type !== 'warning').length,
+    pending: history.filter((h) => h.status !== 'resolved').length,
+    same_type: history.filter(sameType).length,
+    same_offence: target.policy_offence ? history.filter((h) => h.policy_offence === target.policy_offence).length : 0,
+  };
 
   const prompt = `${formatPolicyForPrompt(rulesResult.rows)}
 
@@ -214,6 +234,14 @@ ${describeCase(target)}
 STUDENT'S EARLIER CASES (${history.length}):
 ${historyText}
 Penalty points already awarded (resolved cases, excluding warnings): ${priorPoints}
+
+REPEAT OFFENCES (earlier cases of this student, up to 20):
+- Earlier cases: ${repeatOffences.earlier_cases}
+- Resolved with a warning (0 points, still a prior offence): ${repeatOffences.warnings}
+- Resolved with a penalty: ${repeatOffences.penalised}
+- Not resolved yet: ${repeatOffences.pending}
+- Same offence type (${target.offense_type || 'unknown'}): ${repeatOffences.same_type}
+- Same policy offence${target.policy_offence ? ` (${target.policy_offence})` : ''}: ${target.policy_offence ? repeatOffences.same_offence : 'not recorded for this case'}
 
 Recommend the penalty for THIS CASE as the JSON object described.`;
 
@@ -232,6 +260,7 @@ Recommend the penalty for THIS CASE as the JSON object described.`;
     generated_at: new Date().toISOString(),
     prior_cases: history.length,
     prior_points: priorPoints,
+    repeat_offences: repeatOffences,
     ...normalise(extractJson(text)),
   };
 }

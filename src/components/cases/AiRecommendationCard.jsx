@@ -24,6 +24,35 @@ const list = (value) => (Array.isArray(value) ? value : []);
  * Generated only when the Admin clicks "Generate recommendation" (each call uses Groq quota).
  * Advisory only: "Use in decision" fills the decision form, nothing is saved here.
  */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// The student's earlier offences (warnings included): exact counts from the backend plus the
+// AI's short note on how they affect this penalty.
+function RepeatOffences({ counts, note }) {
+  if (!counts) return null;
+  if (!counts.earlier_cases) {
+    return (
+      <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+        <p className="text-sm font-medium text-emerald-800">First offence: no earlier cases.</p>
+      </div>
+    );
+  }
+  const outcomes = [
+    counts.warnings ? plural(counts.warnings, 'warning') : null,
+    counts.penalised ? `${counts.penalised} penalised` : null,
+    counts.pending ? `${counts.pending} not resolved yet` : null,
+  ].filter(Boolean).join(', ');
+  const same = `${counts.same_type} of the same type${counts.same_offence ? ` (${counts.same_offence} same offence)` : ''}`;
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-1">
+      <p className="text-xs font-medium text-amber-900">
+        Repeat offences: {plural(counts.earlier_cases, 'earlier case')}{outcomes ? `: ${outcomes}` : ''} · {same}
+      </p>
+      {note && <p className="text-sm text-amber-900 leading-relaxed">{note}</p>}
+    </div>
+  );
+}
+
 export default function AiRecommendationCard({ caseId, onApply }) {
   // { status: 'idle' | 'loading' | 'done' | 'error', data, error }
   const [rec, setRec] = useState({ status: 'idle', data: null, error: '' });
@@ -106,6 +135,8 @@ export default function AiRecommendationCard({ caseId, onApply }) {
               {r.summary && <p className="mt-2 text-sm text-slate-600 leading-relaxed">{r.summary}</p>}
             </div>
 
+            <RepeatOffences counts={r.repeat_offences} note={r.repeat_offence_note} />
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <p className="text-xs text-slate-500">Penalty points</p>
@@ -124,7 +155,9 @@ export default function AiRecommendationCard({ caseId, onApply }) {
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                 <p className="text-xs text-slate-500">Points after case</p>
                 <p className="text-xl font-semibold text-slate-900 tabular-nums">{r.points_after_case ?? '—'}</p>
-                <p className="text-[11px] text-slate-500">{r.prior_cases ?? 0} earlier · {r.prior_points ?? 0} pts</p>
+                <p className="text-[11px] text-slate-500">
+                  {r.prior_cases ?? 0} earlier · {r.repeat_offences?.warnings ?? 0} warning{r.repeat_offences?.warnings === 1 ? '' : 's'} · {r.prior_points ?? 0} pts
+                </p>
               </div>
             </div>
 

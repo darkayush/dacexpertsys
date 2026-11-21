@@ -59,6 +59,8 @@ export default function Dashboard() {
   const { role, currentUser } = useAuth();
   const [filter, setFilter] = useState('all');
   const [trendRange, setTrendRange] = useState('30d');
+  // Distribution slice highlighted from the donut or its legend.
+  const [activeSlice, setActiveSlice] = useState(null);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState('');
@@ -288,11 +290,21 @@ export default function Dashboard() {
                 {loading ? (
                   <div className="h-44 w-44 rounded-full bg-slate-100 animate-pulse" />
                 ) : (
-                  <Donut slices={distribution} total={stats.total} />
+                  <Donut slices={distribution} total={stats.total} activeKey={activeSlice} onActiveChange={setActiveSlice} />
                 )}
                 <ul className="w-full divide-y divide-slate-100">
                   {distribution.map((slice) => (
-                    <li key={slice.key} className="flex items-center justify-between py-2.5 text-sm">
+                    <li
+                      key={slice.key}
+                      tabIndex={loading ? undefined : 0}
+                      onMouseEnter={() => setActiveSlice(slice.key)}
+                      onMouseLeave={() => setActiveSlice(null)}
+                      onFocus={() => setActiveSlice(slice.key)}
+                      onBlur={() => setActiveSlice(null)}
+                      className={`flex items-center justify-between py-2.5 px-2 -mx-2 text-sm rounded-lg cursor-default outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-indigo-200 ${
+                        activeSlice === slice.key ? 'bg-slate-50' : ''
+                      } ${activeSlice && activeSlice !== slice.key ? 'opacity-60' : ''}`}
+                    >
                       <span className="flex items-center gap-2.5 text-slate-700">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
                         {slice.label}

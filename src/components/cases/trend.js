@@ -21,7 +21,12 @@ export function buildTrend(cases, range) {
     for (let i = 11; i >= 0; i -= 1) {
       const start = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const end = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
-      buckets.push({ start, end, label: start.toLocaleDateString('en-GB', { month: 'short' }) });
+      buckets.push({
+        start,
+        end,
+        label: start.toLocaleDateString('en-GB', { month: 'short' }),
+        detail: start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+      });
     }
   } else {
     const step = range.bucket === 'week' ? 7 : 1;
@@ -32,7 +37,14 @@ export function buildTrend(cases, range) {
       const start = new Date(end);
       start.setDate(start.getDate() - step);
       const labelDate = step === 1 ? start : end;
-      buckets.push({ start, end, label: labelDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) });
+      // Tooltip text: the day, or the week's first – last day (end is exclusive).
+      const lastDay = new Date(end);
+      lastDay.setDate(lastDay.getDate() - 1);
+      const fullDate = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      const detail = step === 1
+        ? fullDate(start)
+        : `${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${fullDate(lastDay)}`;
+      buckets.push({ start, end, label: labelDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), detail });
     }
   }
   const counts = buckets.map(() => 0);
@@ -43,7 +55,7 @@ export function buildTrend(cases, range) {
     const idx = buckets.findIndex((b) => t >= b.start.getTime() && t < b.end.getTime());
     if (idx !== -1) counts[idx] += c.count ?? 1;
   }
-  return buckets.map((b, i) => ({ label: b.label, value: counts[i] }));
+  return buckets.map((b, i) => ({ label: b.label, detail: b.detail, value: counts[i] }));
 }
 
 // Round tick step (1–10 × 10^n) so 4 gridlines cover the max value without much headroom.

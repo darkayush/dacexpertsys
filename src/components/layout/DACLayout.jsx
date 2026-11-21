@@ -76,7 +76,7 @@ function Sidebar({ role, onNavigate }) {
   return (
     <aside className="h-full w-[min(15rem,85vw)] bg-[#231f52] text-white flex flex-col">
       <div className="flex items-center gap-3 px-5 h-[72px]">
-        <span className="material-symbols-outlined text-[30px] text-indigo-200">verified_user</span>
+        <img src="/favicon.png" alt="BML Munjal University logo" className="h-9 w-9 shrink-0 object-contain" />
         <div className="leading-tight">
           <p className="text-base font-semibold">DAC Portal</p>
           <p className="text-[11px] text-indigo-200/80">Disciplinary Action Committee</p>

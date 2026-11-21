@@ -4,6 +4,7 @@ import DACLayout from '../components/layout/DACLayout';
 import { Avatar, Card, EmptyState, Icon, SeverityPill, StatusText } from '../components/cases/parts';
 import { caseFineText, caseLink, casePointsText, fmtNumber, formatDate, statusLabel, toTitleCase } from '../components/cases/caseUi';
 import { useAuth } from '../context/AuthContext';
+import { recordStudentView } from '../lib/recentlyViewed';
 import { getStudentProfile } from '../services/api';
 
 const BACK_LINKS = {
@@ -45,7 +46,7 @@ function StatTile({ icon, label, value }) {
 export default function StudentProfile() {
   const { enrollmentNo } = useParams();
   const location = useLocation();
-  const { role } = useAuth();
+  const { role, currentUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -65,6 +66,13 @@ export default function StudentProfile() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Staff dashboard "Recently viewed" list.
+  const viewerId = currentUser?.id;
+  const viewedStudent = profile?.student;
+  useEffect(() => {
+    if (viewedStudent) recordStudentView(viewerId, viewedStudent);
+  }, [viewedStudent, viewerId]);
 
   const back = BACK_LINKS[role] || BACK_LINKS.admin;
   const student = profile?.student;

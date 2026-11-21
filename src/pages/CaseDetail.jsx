@@ -9,6 +9,7 @@ import { Avatar, Button, Card, EmptyState, Icon, SeverityPill, StatusText } from
 import StudentProfileLink from '../components/cases/StudentProfileLink';
 import { caseFineText, caseLink, casePointsText, formatDate, formatDateTime, safeReturnPath, statusLabel, toTitleCase } from '../components/cases/caseUi';
 import { useAuth } from '../context/AuthContext';
+import { recordCaseView } from '../lib/recentlyViewed';
 import { approveCase, getCaseById, getCaseEvidence, getCaseMeetings, getCaseTimeline, getGroupCases, scheduleCaseMeeting, updateCase, warnCase } from '../services/api';
 
 const STEPS = [
@@ -280,7 +281,7 @@ export default function CaseDetail() {
   // Set by the student profile when it opens a case, so Back returns to that profile.
   const returnTo = safeReturnPath(location.state?.from);
   const caseId = params.id || params.token;
-  const { role } = useAuth();
+  const { role, currentUser } = useAuth();
   const [caseItem, setCaseItem] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [evidence, setEvidence] = useState([]);
@@ -294,6 +295,12 @@ export default function CaseDetail() {
   // Values from the AI recommendation copied into the decision form; version re-mounts the form.
   const [prefill, setPrefill] = useState({ caseId: null, values: null, version: 0 });
   const decisionRef = useRef(null);
+
+  // Staff dashboard "Recently viewed" list.
+  const viewerId = currentUser?.id;
+  useEffect(() => {
+    if (caseItem && role !== 'student') recordCaseView(viewerId, caseItem);
+  }, [caseItem, role, viewerId]);
 
   const applyRecommendation = (values) => {
     setPrefill((prev) => ({ caseId: caseItem?.id, values, version: prev.version + 1 }));

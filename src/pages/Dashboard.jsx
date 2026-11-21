@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DACLayout from '../components/layout/DACLayout';
 import CasesTable from '../components/cases/CasesTable';
+import RecentlyViewedCard from '../components/cases/RecentlyViewedCard';
 import { Donut, TrendChart } from '../components/cases/charts';
 import { Avatar, Card, Icon } from '../components/cases/parts';
 import { TREND_RANGES, buildTrend } from '../components/cases/trend';
@@ -284,6 +285,8 @@ export default function Dashboard() {
                 ))}
               </ul>
             </Card>
+
+            <RecentlyViewedCard key={currentUser?.id || 'anonymous'} userId={currentUser?.id} role={role} />
 
             <Card title="Case Distribution" icon="donut_large">
               <div className="px-6 pb-6 flex flex-col sm:flex-row xl:flex-col 2xl:flex-row items-center gap-6">

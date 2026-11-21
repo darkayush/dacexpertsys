@@ -181,6 +181,21 @@ Works best in Chrome or Edge.
 
 The official policies are transcribed in `backend/config/dacPolicy.js` and served by `GET /api/policies/dac`. They are shown on the student **DAC Policy** page and the admin **Rules & Policies** page, and are used to load the rules list and to ground AI recommendations.
 
+Every rule has an **offence type** (`rules.offence_type`, one of `OFFENCE_TYPES` in `dacPolicy.js`):
+
+- Substance Abuse
+- Attendance & Curfew
+- Disruption & Conduct
+- Harassment & Violence
+- Property Damage & Theft
+- Cyber Offence
+- Serious Misconduct
+- Exam Malpractice
+- Plagiarism
+- Other (typed by hand)
+
+On **Register Case**, the warden picks a type, then one of that type's rules. The chosen offence is saved in the case notes; the DAC still sets the final level and points. A rule the admin adds in **System Config** appears under the type chosen for it. On start, bootstrap fills in the type for policy rules that have none. It also relabels cases stored under the old type names (Attendance, Disruption, Harassment, Vandalism) to the new names.
+
 **Disciplinary Action Policy, Version 02** (BMU/RO/2025/0051, 19 February 2025):
 
 | Level | Points | Fine | Offences (summary) |

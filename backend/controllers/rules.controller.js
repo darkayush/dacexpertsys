@@ -5,6 +5,15 @@ import {
   deleteRuleService,
   loadDacPolicyRulesService,
 } from '../services/rules.service.js';
+import { OFFENCE_TYPES } from '../config/dacPolicy.js';
+
+// A rule's offence_type must be one of the Register Case offence types (empty = none).
+// "Other" has no rule list: the warden types the offence.
+function invalidOffenceType(value) {
+  if (value === undefined || value === null || value === '') return false;
+  return value === 'Other' || !OFFENCE_TYPES.includes(value);
+}
+const OFFENCE_TYPE_ERROR = `offence_type must be one of: ${OFFENCE_TYPES.filter((t) => t !== 'Other').join(', ')}`;
 
 export async function getRulesController(req, res) {
   try {
@@ -18,12 +27,15 @@ export async function getRulesController(req, res) {
 
 export async function createRuleController(req, res) {
   try {
-    const { question, weight, category } = req.body || {};
+    const { question, weight, category, offence_type: offenceType } = req.body || {};
     if (!question || weight === undefined || weight === null) {
       return res.status(400).json({ error: 'question and weight are required' });
     }
+    if (invalidOffenceType(offenceType)) {
+      return res.status(400).json({ error: OFFENCE_TYPE_ERROR });
+    }
 
-    const created = await createRuleService({ question, weight, category });
+    const created = await createRuleService({ question, weight, category, offence_type: offenceType });
     return res.status(201).json(created);
   } catch (error) {
     console.error('Error creating rule:', error);
@@ -36,6 +48,9 @@ export async function updateRuleController(req, res) {
     const ruleId = Number(req.params.id);
     if (!ruleId) {
       return res.status(400).json({ error: 'A valid rule id is required' });
+    }
+    if (invalidOffenceType(req.body?.offence_type)) {
+      return res.status(400).json({ error: OFFENCE_TYPE_ERROR });
     }
 
     const updated = await updateRuleService(ruleId, req.body || {});

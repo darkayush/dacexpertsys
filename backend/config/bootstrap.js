@@ -1,4 +1,5 @@
 import pool from './db.js';
+import { getDacPolicyRules, OFFENCE_TYPE_RENAMES } from './dacPolicy.js';
 
 // Recalculates every student's users.total_points from their cases (DAC points rule above
 // ensureWorkflowSchema's points section). Idempotent; only rows whose total differs change.
@@ -262,6 +263,35 @@ export async function ensureWorkflowSchema() {
     }
   } catch (err) {
     // Ignore if already configured or users table not yet ready
+  }
+
+  // Offence types (Register Case dropdown). Each rule in Rules & Policies has an offence_type.
+  // Rules from the DAC/Unfair Means policies get theirs by name; only rules with no type yet are
+  // filled, so a type the admin changed is kept. Then cases still stored under an older type
+  // name are relabelled to the current one (1:1 rename; normally 0 rows after the first start).
+  const policyRules = getDacPolicyRules();
+  const renames = Object.entries(OFFENCE_TYPE_RENAMES);
+  const offenceTypeStatements = [
+    ['ALTER TABLE rules ADD COLUMN IF NOT EXISTS offence_type TEXT'],
+    [
+      `UPDATE rules r SET offence_type = p.offence_type
+       FROM unnest($1::text[], $2::text[]) AS p(question, offence_type)
+       WHERE r.offence_type IS NULL AND LOWER(TRIM(r.question)) = LOWER(TRIM(p.question))`,
+      [policyRules.map((r) => r.question), policyRules.map((r) => r.offence_type)],
+    ],
+    [
+      `UPDATE cases c SET offense_type = m.new_name
+       FROM unnest($1::text[], $2::text[]) AS m(old_name, new_name)
+       WHERE c.offense_type = m.old_name`,
+      [renames.map(([oldName]) => oldName), renames.map(([, newName]) => newName)],
+    ],
+  ];
+  for (const [statement, params] of offenceTypeStatements) {
+    try {
+      await pool.query(statement, params);
+    } catch (err) {
+      console.warn(`Bootstrap statement warning (${err.message}):`, statement.slice(0, 80));
+    }
   }
 
   // DAC points rule: a student's users.total_points is the sum of penalty_points of their cases

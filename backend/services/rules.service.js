@@ -2,22 +2,22 @@ import pool from '../config/db.js';
 import { getDacPolicyRules } from '../config/dacPolicy.js';
 
 export async function getRulesService() {
-  const result = await pool.query('SELECT id, question, weight, category FROM rules ORDER BY id ASC');
+  const result = await pool.query('SELECT id, question, weight, category, offence_type FROM rules ORDER BY id ASC');
   return result.rows;
 }
 
-export async function createRuleService({ question, weight, category }) {
+export async function createRuleService({ question, weight, category, offence_type: offenceType }) {
   const query = `
-    INSERT INTO rules (question, weight, category)
-    VALUES ($1, $2, $3)
-    RETURNING id, question, weight, category
+    INSERT INTO rules (question, weight, category, offence_type)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, question, weight, category, offence_type
   `;
-  const result = await pool.query(query, [question, weight, category || null]);
+  const result = await pool.query(query, [question, weight, category || null, offenceType || null]);
   return result.rows[0] || null;
 }
 
 export async function updateRuleService(ruleId, payload = {}) {
-  const { question, weight, category } = payload;
+  const { question, weight, category, offence_type: offenceType } = payload;
   const updates = [];
   const values = [];
 
@@ -33,9 +33,13 @@ export async function updateRuleService(ruleId, payload = {}) {
     values.push(category);
     updates.push(`category = $${values.length}`);
   }
+  if (Object.prototype.hasOwnProperty.call(payload, 'offence_type')) {
+    values.push(offenceType || null);
+    updates.push(`offence_type = $${values.length}`);
+  }
 
   if (!updates.length) {
-    const existing = await pool.query('SELECT id, question, weight, category FROM rules WHERE id = $1', [ruleId]);
+    const existing = await pool.query('SELECT id, question, weight, category, offence_type FROM rules WHERE id = $1', [ruleId]);
     return existing.rows[0] || null;
   }
 
@@ -44,20 +48,20 @@ export async function updateRuleService(ruleId, payload = {}) {
     UPDATE rules
     SET ${updates.join(', ')}
     WHERE id = $${values.length}
-    RETURNING id, question, weight, category
+    RETURNING id, question, weight, category, offence_type
   `;
   const result = await pool.query(query, values);
   return result.rows[0] || null;
 }
 
 export async function deleteRuleService(ruleId) {
-  const result = await pool.query('DELETE FROM rules WHERE id = $1 RETURNING id, question, weight, category', [ruleId]);
+  const result = await pool.query('DELETE FROM rules WHERE id = $1 RETURNING id, question, weight, category, offence_type', [ruleId]);
   return result.rows[0] || null;
 }
 
 /**
  * Loads the DAC Policy v2 offences as rules (weight = penalty points, category = level).
- * Adds missing ones and corrects points/level of existing ones (matched by name, case-insensitive).
+ * Adds missing ones and corrects points/level/offence type of existing ones (matched by name, case-insensitive).
  * With replace = true, rules that are not in the policy are deleted.
  */
 export async function loadDacPolicyRulesService({ replace = false } = {}) {
@@ -69,15 +73,18 @@ export async function loadDacPolicyRulesService({ replace = false } = {}) {
     let updated = 0;
     for (const rule of policyRules) {
       const result = await client.query(
-        `UPDATE rules SET weight = $2, category = $3
+        `UPDATE rules SET weight = $2, category = $3, offence_type = $4
          WHERE LOWER(TRIM(question)) = LOWER(TRIM($1))
          RETURNING id`,
-        [rule.question, rule.weight, rule.category],
+        [rule.question, rule.weight, rule.category, rule.offence_type],
       );
       if (result.rowCount) {
         updated += result.rowCount;
       } else {
-        await client.query('INSERT INTO rules (question, weight, category) VALUES ($1, $2, $3)', [rule.question, rule.weight, rule.category]);
+        await client.query(
+          'INSERT INTO rules (question, weight, category, offence_type) VALUES ($1, $2, $3, $4)',
+          [rule.question, rule.weight, rule.category, rule.offence_type],
+        );
         added += 1;
       }
     }

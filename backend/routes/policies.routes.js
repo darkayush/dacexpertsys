@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import pool from '../config/db.js';
-import { DAC_POLICY, UNFAIR_MEANS_POLICY } from '../config/dacPolicy.js';
+import { DAC_POLICY, OFFENCE_TYPES, UNFAIR_MEANS_POLICY } from '../config/dacPolicy.js';
 
 const router = Router();
 
@@ -20,9 +20,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Structured official policies (DAC Policy v2 + Unfair Means Policy) for the student policy page.
+// Structured official policies (DAC Policy v2 + Unfair Means Policy) for the student policy page,
+// plus the offence types used by Register Case and the Rules & Policies editor.
 router.get('/dac', (req, res) => {
-  res.status(200).json({ dac: DAC_POLICY, unfairMeans: UNFAIR_MEANS_POLICY });
+  res.status(200).json({ dac: DAC_POLICY, unfairMeans: UNFAIR_MEANS_POLICY, offenceTypes: OFFENCE_TYPES });
 });
 
 export default router;

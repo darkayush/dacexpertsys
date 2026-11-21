@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createRule, deleteRule, getRules, loadDacPolicyRules, updateRule } from '../../services/api';
+import { createRule, deleteRule, getOffenceTypes, getRules, loadDacPolicyRules, updateRule } from '../../services/api';
 
 const severityColors = {
   Critical: 'bg-red-100 text-red-700',
@@ -12,6 +12,7 @@ const emptyRuleForm = {
   id: null,
   name: '',
   category: '',
+  offenceType: '',
   weight: '',
 };
 
@@ -51,6 +52,16 @@ export default function RulesWeights() {
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [loadPolicyOpen, setLoadPolicyOpen] = useState(false);
+  // Register Case offence types a rule can be listed under ("Other" has no rule list).
+  const [offenceTypes, setOffenceTypes] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    getOffenceTypes()
+      .then((types) => { if (mounted) setOffenceTypes(types.filter((t) => t !== 'Other')); })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +110,7 @@ export default function RulesWeights() {
       id: rule.id,
       name: rule.question || '',
       category: rule.category || '',
+      offenceType: rule.offence_type || '',
       weight: String(rule.weight ?? ''),
     });
     setSuccess('');
@@ -141,8 +153,8 @@ export default function RulesWeights() {
   };
 
   const handleSubmit = async () => {
-    if (!form.name.trim() || form.weight === '') {
-      setError('Offence and penalty points are required.');
+    if (!form.name.trim() || form.weight === '' || !form.offenceType) {
+      setError('Offence, offence type and penalty points are required.');
       return;
     }
 
@@ -154,6 +166,7 @@ export default function RulesWeights() {
         const created = await createRule({
           question: form.name.trim(),
           category: form.category.trim() || null,
+          offence_type: form.offenceType,
           weight: Number(form.weight),
         });
         setRules((prev) => [...prev, created]);
@@ -162,6 +175,7 @@ export default function RulesWeights() {
         const updated = await updateRule(form.id, {
           question: form.name.trim(),
           category: form.category.trim() || null,
+          offence_type: form.offenceType,
           weight: Number(form.weight),
         });
         setRules((prev) => prev.map((rule) => (rule.id === updated.id ? updated : rule)));
@@ -261,7 +275,7 @@ export default function RulesWeights() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/50 border-b border-[#e2e8f0]">
-                {['Rule ID', 'Offence', 'Level', 'Penalty Points', 'Fine', 'Severity', 'Actions'].map((h) => (
+                {['Rule ID', 'Offence', 'Offence Type', 'Level', 'Penalty Points', 'Fine', 'Severity', 'Actions'].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-xs font-semibold text-[#64748b] uppercase tracking-wider">
                     {h}
                   </th>
@@ -271,13 +285,13 @@ export default function RulesWeights() {
             <tbody className="divide-y divide-[#f1f5f9]">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-sm text-[#64748b]">
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-[#64748b]">
                     Loading rules...
                   </td>
                 </tr>
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-sm text-[#64748b]">
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-[#64748b]">
                     No rules found.
                   </td>
                 </tr>
@@ -291,6 +305,13 @@ export default function RulesWeights() {
                       </td>
                       <td className="px-5 py-4">
                         <span className="text-sm font-medium text-[#0f172a]">{rule.question}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {rule.offence_type ? (
+                          <span className="text-sm text-[#334155] whitespace-nowrap">{rule.offence_type}</span>
+                        ) : (
+                          <span className="text-xs text-amber-700" title="Not listed on Register Case until it has an offence type">Not set</span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <span className="text-sm text-[#64748b]">{rule.category || '—'}</span>
@@ -350,7 +371,9 @@ export default function RulesWeights() {
               <h4 className="text-[#0f172a] text-lg font-bold">
                 {modal.mode === 'create' ? 'Add Rule' : 'Edit Rule'}
               </h4>
-              <p className="text-sm text-[#64748b] mt-1">Pick a DAC level to fill in its penalty points.</p>
+              <p className="text-sm text-[#64748b] mt-1">
+                Pick a DAC level to fill in its penalty points. The offence type decides where the offence is listed on Register Case.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -362,6 +385,17 @@ export default function RulesWeights() {
                   onChange={handleFormChange('name')}
                   className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a] focus:outline-none focus:border-[#3d3793] focus:ring-1 focus:ring-[#3d3793]"
                 />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#334155]">Offence type *</label>
+                <select
+                  value={form.offenceType}
+                  onChange={handleFormChange('offenceType')}
+                  className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-3 py-2 text-sm text-[#0f172a] focus:outline-none focus:border-[#3d3793] focus:ring-1 focus:ring-[#3d3793]"
+                >
+                  <option value="">Select offence type...</option>
+                  {offenceTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-sm font-medium text-[#334155]">Level</label>
@@ -421,7 +455,7 @@ export default function RulesWeights() {
               <p className="text-sm text-[#64748b] mt-1">
                 Adds every offence from the DAC Policy (Level 1 = 10, Level 2 = 25, Level 3 = 50, Level 4 = 100 points),
                 the exam offences from the Unfair Means Policy that map to a DAC level, and plagiarism.
-                Existing rules with the same name get corrected points and level.
+                Existing rules with the same name get corrected points, level and offence type.
               </p>
               <p className="text-sm text-[#64748b] mt-2">
                 <span className="font-medium text-[#0f172a]">Replace all</span> also deletes every rule that is not in the policy.

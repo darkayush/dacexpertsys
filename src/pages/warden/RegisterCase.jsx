@@ -5,12 +5,27 @@ import DACLayout from '../../components/layout/DACLayout';
 import { useAuth } from '../../context/AuthContext';
 import StudentCard from '../../components/ui/StudentCard';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { createCase, createGroupCases, getStudentHistory, translateHindiToEnglish, uploadEvidence } from '../../services/api';
+import { createCase, createGroupCases, getOffenceTypes, getRules, getStudentHistory, translateHindiToEnglish, uploadEvidence } from '../../services/api';
 
-const offenseOptions = [
-  'Plagiarism', 'Vandalism', 'Exam Malpractice', 'Attendance',
-  'Disruption', 'Substance Abuse', 'Harassment', 'Other',
-];
+// Offence types and their offences come from Admin Settings → Rules & Policies: each rule has an
+// offence_type, and the types list (with its order) is served by /api/policies/dac.
+// These types have extra fields on this form.
+const HARASSMENT_TYPE = 'Harassment & Violence';
+const PROPERTY_TYPE = 'Property Damage & Theft';
+
+// "Exam: ..." / "Plagiarism: ..." prefixes repeat the type, so they are dropped in the list.
+const offenceLabel = (rule) => String(rule.question || '').replace(/^(Exam|Plagiarism):\s*/i, '');
+
+// Rules of one offence type, grouped by level (category) in first-seen order.
+function groupRulesByLevel(rules) {
+  const groups = new Map();
+  rules.forEach((rule) => {
+    const key = rule.category || 'No level';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(rule);
+  });
+  return [...groups.entries()];
+}
 
 const STEPS = ['Student Info', 'Incident Details', 'Evidence', 'Review', 'Submit'];
 
@@ -401,6 +416,9 @@ function StepGroupStudents({ students, input, onInputChange, onAdd, onRemove, lo
 function StepIncidentDetails({
   form,
   set,
+  offenceTypes = [],
+  typeRules = [],
+  catalogError = '',
   onOffenseTypeChange,
   errors,
   getInputClass,
@@ -432,14 +450,42 @@ function StepIncidentDetails({
             className={`w-full appearance-none ${getInputClass('offenseType')} py-3 cursor-pointer`}
           >
             <option value="" disabled>Select offense category...</option>
-            {offenseOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            {offenceTypes.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#64748b] text-[20px] pointer-events-none">
             expand_more
           </span>
         </div>
         {errors.offenseType ? <p className="text-xs text-red-600">{errors.offenseType}</p> : null}
+        {catalogError ? <p className="text-xs text-amber-700">{catalogError}</p> : null}
       </Field>
+
+      {typeRules.length > 0 && (
+        <Field label="Offence *">
+          <div className="relative">
+            <select
+              value={form.policyRuleId}
+              onChange={set('policyRuleId')}
+              data-field="policyRuleId"
+              className={`w-full appearance-none ${getInputClass('policyRuleId')} py-3 pr-10 cursor-pointer`}
+            >
+              <option value="" disabled>Select the offence...</option>
+              {groupRulesByLevel(typeRules).map(([level, rules]) => (
+                <optgroup key={level} label={level}>
+                  {rules.map((rule) => (
+                    <option key={rule.id} value={String(rule.id)}>{offenceLabel(rule)} ({rule.weight} pts)</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#64748b] text-[20px] pointer-events-none">
+              expand_more
+            </span>
+          </div>
+          <p className="text-xs text-[#64748b]">From Rules &amp; Policies. Points are final only after the DAC resolves the case.</p>
+          {errors.policyRuleId ? <p className="text-xs text-red-600">{errors.policyRuleId}</p> : null}
+        </Field>
+      )}
 
       <Field label="Time of Incident *">
         <input
@@ -572,7 +618,7 @@ function StepIncidentDetails({
           </motion.div>
         )}
 
-        {form.offenseType === 'Harassment' && (
+        {form.offenseType === HARASSMENT_TYPE && (
           <motion.div
             key="harassment-fields"
             initial={{ opacity: 0, y: 8 }}
@@ -592,14 +638,14 @@ function StepIncidentDetails({
               />
               {errors.victimName ? <p className="text-xs text-red-600">{errors.victimName}</p> : null}
             </Field>
-            <Field label="Type of Harassment *">
+            <Field label="Type of Harassment / Violence *">
               <select
                 value={form.harassmentType}
                 onChange={set('harassmentType')}
                 data-field="harassmentType"
                 className={`w-full appearance-none ${getInputClass('harassmentType')} py-3 cursor-pointer`}
               >
-                <option value="">Select harassment type...</option>
+                <option value="">Select type...</option>
                 {['verbal', 'physical', 'online', 'other'].map((type) => (
                   <option key={type} value={type}>{toTitleCase(type)}</option>
                 ))}
@@ -609,7 +655,7 @@ function StepIncidentDetails({
           </motion.div>
         )}
 
-        {form.offenseType === 'Vandalism' && (
+        {form.offenseType === PROPERTY_TYPE && (
           <motion.div
             key="vandalism-fields"
             initial={{ opacity: 0, y: 8 }}
@@ -618,18 +664,18 @@ function StepIncidentDetails({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5"
           >
-            <Field label="Property Damaged *">
+            <Field label="Property Damaged / Stolen *">
               <input
                 type="text"
                 value={form.propertyDamaged}
                 onChange={set('propertyDamaged')}
                 data-field="propertyDamaged"
-                placeholder="Describe damaged property"
+                placeholder="Describe the damaged or stolen property"
                 className={getInputClass('propertyDamaged')}
               />
               {errors.propertyDamaged ? <p className="text-xs text-red-600">{errors.propertyDamaged}</p> : null}
             </Field>
-            <Field label="Estimated Damage Cost *">
+            <Field label="Estimated Damage / Loss Cost *">
               <input
                 type="number"
                 value={form.damageCost}
@@ -801,7 +847,7 @@ function StepEvidence({
   );
 }
 
-function StepReview({ form, groupStudents, groupReadings = {} }) {
+function StepReview({ form, groupStudents, groupReadings = {}, policyRule = null }) {
   const isGroup = Array.isArray(groupStudents);
   const showReadings = isGroup && form.offenseType === 'Substance Abuse' && form.substanceType === 'Alcohol';
   const rows = [
@@ -816,6 +862,7 @@ function StepReview({ form, groupStudents, groupReadings = {} }) {
         { label: 'Room Number', value: form.roomNo || '-' },
       ]),
     { label: 'Offense Type', value: form.offenseType || '-' },
+    ...(policyRule ? [{ label: 'Offence', value: `${offenceLabel(policyRule)} (${policyRule.category || 'no level'}, ${policyRule.weight} pts)` }] : []),
     { label: 'Time of Incident', value: form.incidentTime || '-' },
   ];
 
@@ -834,14 +881,14 @@ function StepReview({ form, groupStudents, groupReadings = {} }) {
     }
   }
 
-  if (form.offenseType === 'Harassment') {
+  if (form.offenseType === HARASSMENT_TYPE) {
     rows.push({ label: 'Victim Name', value: form.victimName || '-' });
-    rows.push({ label: 'Harassment Type', value: form.harassmentType ? toTitleCase(form.harassmentType) : '-' });
+    rows.push({ label: 'Harassment / Violence Type', value: form.harassmentType ? toTitleCase(form.harassmentType) : '-' });
   }
 
-  if (form.offenseType === 'Vandalism') {
-    rows.push({ label: 'Property Damaged', value: form.propertyDamaged || '-' });
-    rows.push({ label: 'Estimated Damage Cost', value: form.damageCost ? `Rs. ${form.damageCost}` : '-' });
+  if (form.offenseType === PROPERTY_TYPE) {
+    rows.push({ label: 'Property Damaged / Stolen', value: form.propertyDamaged || '-' });
+    rows.push({ label: 'Estimated Damage / Loss Cost', value: form.damageCost ? `Rs. ${form.damageCost}` : '-' });
   }
 
   if (form.offenseType === 'Other') {
@@ -1007,6 +1054,7 @@ export default function RegisterCase() {
   const [form, setForm] = useState({
     studentName: '', rollNumber: '', department: '', year: '', hostel: '', roomNo: '',
     offenseType: '',
+    policyRuleId: '',
     incidentTime: '',
     substanceType: '',
     customSubstance: '',
@@ -1021,6 +1069,8 @@ export default function RegisterCase() {
     description: '',
   });
   const [errors, setErrors] = useState({});
+  // Offence types and rules from Rules & Policies.
+  const [offenceCatalog, setOffenceCatalog] = useState({ types: [], rules: [], error: '' });
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupStatusType, setLookupStatusType] = useState('');
   const [lookupStatusMessage, setLookupStatusMessage] = useState('');
@@ -1289,6 +1339,7 @@ export default function RegisterCase() {
   );
 
   const resetIncidentDependentFields = () => ({
+    policyRuleId: '',
     substanceType: '',
     customSubstance: '',
     alcoholReading: '',
@@ -1372,6 +1423,30 @@ export default function RegisterCase() {
     lookupStudentByEnrollment(form.rollNumber);
   };
 
+  useEffect(() => {
+    let mounted = true;
+    Promise.allSettled([getOffenceTypes(), getRules()]).then(([typesResult, rulesResult]) => {
+      if (!mounted) return;
+      const allTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
+      const rules = rulesResult.status === 'fulfilled' ? (rulesResult.value || []) : [];
+      // List a type only when it has offences (plus "Other", typed by hand). If the rules could
+      // not be loaded, list every type so a case can still be registered.
+      const types = rulesResult.status === 'fulfilled'
+        ? allTypes.filter((type) => type === 'Other' || rules.some((rule) => rule.offence_type === type))
+        : allTypes;
+      let error = '';
+      if (typesResult.status !== 'fulfilled') error = 'Could not load the offence types. Reload the page to try again.';
+      else if (rulesResult.status !== 'fulfilled') error = 'Could not load the offences from Rules & Policies; you can still register the case by type.';
+      setOffenceCatalog({ types, rules, error });
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const typeRules = form.offenseType && form.offenseType !== 'Other'
+    ? offenceCatalog.rules.filter((rule) => rule.offence_type === form.offenseType)
+    : [];
+  const policyRule = typeRules.find((rule) => String(rule.id) === String(form.policyRuleId)) || null;
+
   const handleOffenseTypeChange = (e) => {
     const selectedOffense = e.target.value;
     setForm((prev) => ({
@@ -1382,6 +1457,7 @@ export default function RegisterCase() {
     setErrors((prev) => ({
       ...prev,
       offenseType: '',
+      policyRuleId: '',
       substanceType: '',
       customSubstance: '',
       alcoholReading: '',
@@ -1422,6 +1498,9 @@ export default function RegisterCase() {
       if (!String(form.offenseType || '').trim()) {
         nextErrors.offenseType = 'This field is required';
       }
+      if (typeRules.length && !policyRule) {
+        nextErrors.policyRuleId = 'Select the offence';
+      }
       if (!String(form.incidentTime || '').trim()) {
         nextErrors.incidentTime = 'This field is required';
       }
@@ -1452,7 +1531,7 @@ export default function RegisterCase() {
         }
       }
 
-      if (form.offenseType === 'Harassment') {
+      if (form.offenseType === HARASSMENT_TYPE) {
         if (!String(form.victimName || '').trim()) {
           nextErrors.victimName = 'This field is required';
         }
@@ -1461,7 +1540,7 @@ export default function RegisterCase() {
         }
       }
 
-      if (form.offenseType === 'Vandalism') {
+      if (form.offenseType === PROPERTY_TYPE) {
         if (!String(form.propertyDamaged || '').trim()) {
           nextErrors.propertyDamaged = 'This field is required';
         }
@@ -1513,14 +1592,16 @@ export default function RegisterCase() {
 
       // Offense-specific details that have no dedicated column.
       const noteLines = [];
+      // The offence picked from Rules & Policies; the DAC sets the final level and points.
+      if (policyRule) noteLines.push(`Policy offence: ${policyRule.question} (${policyRule.category || 'no level'}, ${policyRule.weight} pts)`);
       if (alcoholReadingRaw && alcoholReadingNumber === null) noteLines.push(`Alcohol reading: ${alcoholReadingRaw}`);
-      if (form.offenseType === 'Harassment') {
+      if (form.offenseType === HARASSMENT_TYPE) {
         noteLines.push(`Victim name: ${form.victimName}`);
-        noteLines.push(`Harassment type: ${toTitleCase(form.harassmentType)}`);
+        noteLines.push(`Harassment/violence type: ${toTitleCase(form.harassmentType)}`);
       }
-      if (form.offenseType === 'Vandalism') {
-        noteLines.push(`Property damaged: ${form.propertyDamaged}`);
-        noteLines.push(`Estimated damage cost: Rs. ${form.damageCost}`);
+      if (form.offenseType === PROPERTY_TYPE) {
+        noteLines.push(`Property damaged/stolen: ${form.propertyDamaged}`);
+        noteLines.push(`Estimated damage/loss cost: Rs. ${form.damageCost}`);
       }
 
       // The form records the time only; the incident is registered on the day it is reported.
@@ -1650,6 +1731,9 @@ export default function RegisterCase() {
       <StepIncidentDetails
         form={form}
         set={set}
+        offenceTypes={offenceCatalog.types}
+        typeRules={typeRules}
+        catalogError={offenceCatalog.error}
         groupStudents={incidentMode === 'group' ? groupStudents : null}
         groupReadings={groupReadings}
         onGroupReadingChange={setGroupReading}
@@ -1692,6 +1776,7 @@ export default function RegisterCase() {
     />,
     <StepReview
       form={form}
+      policyRule={policyRule}
       groupStudents={incidentMode === 'group' ? groupStudents : null}
       groupReadings={groupReadings}
     />,

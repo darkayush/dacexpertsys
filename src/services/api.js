@@ -425,6 +425,11 @@ export async function getDacPolicy() {
   return fetchJson('/api/policies/dac');
 }
 
+/** Offence types for Register Case and the rules editor (each rule belongs to one; "Other" has none). */
+export async function getOffenceTypes() {
+  return (await getDacPolicy())?.offenceTypes || [];
+}
+
 /** Admin: adds/corrects the DAC Policy v2 offences as rules. replace=true also deletes other rules. */
 export async function loadDacPolicyRules(replace = false) {
   return fetchJson('/api/rules/load-dac-policy', {

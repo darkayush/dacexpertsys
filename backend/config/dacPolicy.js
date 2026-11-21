@@ -204,6 +204,57 @@ export const UNFAIR_MEANS_POLICY = {
   ],
 };
 
+// Offence types shown in the Register Case "Offense Type" dropdown, in this order. Each rule in
+// Admin Settings → Rules & Policies belongs to one type (rules.offence_type); picking a type on
+// Register Case lists that type's rules. "Other" has no rules: the warden types the offence.
+export const OFFENCE_TYPES = [
+  'Substance Abuse',
+  'Attendance & Curfew',
+  'Disruption & Conduct',
+  'Harassment & Violence',
+  'Property Damage & Theft',
+  'Cyber Offence',
+  'Serious Misconduct',
+  'Exam Malpractice',
+  'Plagiarism',
+  'Other',
+];
+
+// Offence type of each DAC Policy v2 offence (exam and plagiarism rules get their type below).
+const DAC_OFFENCE_TYPE = {
+  'Missing a compulsory guest lecture or event': 'Attendance & Curfew',
+  'Entering campus after use of intoxicants such as alcohol': 'Substance Abuse',
+  'Leaving campus without permission': 'Attendance & Curfew',
+  'Arriving late at the campus at night': 'Attendance & Curfew',
+  'Possession or consumption of cigarettes, liquor or any intoxicants on campus': 'Substance Abuse',
+  'Stirring communal, caste or religious sentiments that lead to discord among students': 'Disruption & Conduct',
+  'Creating disturbance or nuisance in hostel/University': 'Disruption & Conduct',
+  'Use of derogatory slogans in the University premises': 'Disruption & Conduct',
+  'Misbehaviour with support or security staff and faculty': 'Harassment & Violence',
+  'Cyber offence': 'Cyber Offence',
+  Gambling: 'Disruption & Conduct',
+  Stealing: 'Property Damage & Theft',
+  'Wilful abuse or damage of university property': 'Property Damage & Theft',
+  'Indulging in fights and brawls': 'Harassment & Violence',
+  'Endangering life and property': 'Harassment & Violence',
+  'False activation of fire alarms': 'Disruption & Conduct',
+  'Violent physical assault': 'Harassment & Violence',
+  'Serious cyber offence': 'Cyber Offence',
+  'Maligning the name of the University': 'Serious Misconduct',
+  'Committing forgery, tampering or misuse of university documents/records': 'Serious Misconduct',
+  'Any offence under law': 'Serious Misconduct',
+  'Any activity bringing disrepute to BMU': 'Serious Misconduct',
+};
+
+// Older offence type names (still in seed data and cases registered before the types were
+// linked to the rules) and their current names. Bootstrap relabels existing cases on start.
+export const OFFENCE_TYPE_RENAMES = {
+  Attendance: 'Attendance & Curfew',
+  Disruption: 'Disruption & Conduct',
+  Harassment: 'Harassment & Violence',
+  Vandalism: 'Property Damage & Theft',
+};
+
 // Penalty points for the DAC level named in the Unfair Means Policy. Category 4 says "DAC Level III/IV";
 // the rules list uses Level III (50) as the minimum, and the Committee may award Level IV (100).
 const UFM_LEVEL_POINTS = { I: 10, II: 25, 'III/IV': 50 };
@@ -215,12 +266,14 @@ const UFM_LEVEL_POINTS = { I: 10, II: 25, 'III/IV': 50 };
  *    category "Exam Cat. N (DAC Level X)". Category 1 (grade penalty only) and Category 5
  *    (expulsion) carry no DAC level, so they are not point rules.
  *  - Plagiarism: minor = DAC Level I, major = DAC Level III.
+ * offence_type = the Register Case offence type (OFFENCE_TYPES) the rule is listed under.
  */
 export function getDacPolicyRules() {
   const dacRules = DAC_POLICY.levels.flatMap((level) => level.offences.map((offence) => ({
     question: offence,
     weight: level.points,
     category: `Level ${level.level}`,
+    offence_type: DAC_OFFENCE_TYPE[offence] || 'Other',
   })));
 
   const examRules = UNFAIR_MEANS_POLICY.categories
@@ -229,11 +282,12 @@ export function getDacPolicyRules() {
       question: `Exam: ${offence}`,
       weight: UFM_LEVEL_POINTS[c.dacLevel],
       category: `Exam Cat. ${c.category} (DAC Level ${c.dacLevel})`,
+      offence_type: 'Exam Malpractice',
     })));
 
   const plagiarismRules = [
-    { question: 'Plagiarism: minor offence (poor referencing, not an intent to deceive)', weight: 10, category: 'Plagiarism (DAC Level I)' },
-    { question: 'Plagiarism: major offence (large copied sections, another student\'s work, or third minor offence)', weight: 50, category: 'Plagiarism (DAC Level III)' },
+    { question: 'Plagiarism: minor offence (poor referencing, not an intent to deceive)', weight: 10, category: 'Plagiarism (DAC Level I)', offence_type: 'Plagiarism' },
+    { question: 'Plagiarism: major offence (large copied sections, another student\'s work, or third minor offence)', weight: 50, category: 'Plagiarism (DAC Level III)', offence_type: 'Plagiarism' },
   ];
 
   return [...dacRules, ...examRules, ...plagiarismRules];

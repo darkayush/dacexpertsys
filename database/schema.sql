@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS rules (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
     weight FLOAT NOT NULL DEFAULT 1.0,
-    category TEXT
+    category TEXT,
+    -- Register Case offence type this rule is listed under (OFFENCE_TYPES in backend/config/dacPolicy.js).
+    offence_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS evidence (

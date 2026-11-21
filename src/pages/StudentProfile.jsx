@@ -24,7 +24,7 @@ function Field({ label, children }) {
   );
 }
 
-function StatTile({ icon, label, value }) {
+function StatTile({ icon, label, value, note }) {
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex items-center gap-4">
       <span className="h-11 w-11 shrink-0 rounded-xl bg-[#f0eefc] text-[#3d3793] flex items-center justify-center">
@@ -33,6 +33,7 @@ function StatTile({ icon, label, value }) {
       <div>
         <p className="text-xs text-slate-500">{label}</p>
         <p className="text-2xl font-semibold text-slate-900">{value}</p>
+        {note && <p className="text-[11px] text-amber-700">{note}</p>}
       </div>
     </div>
   );
@@ -113,7 +114,12 @@ export default function StudentProfile() {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatTile icon="folder_open" label="Total DAC cases" value={fmtNumber(summary.total_cases)} />
-              <StatTile icon="report" label="Total DAC penalty points" value={fmtNumber(summary.total_points)} />
+              <StatTile
+                icon="report"
+                label="Total DAC penalty points"
+                value={fmtNumber(summary.total_points)}
+                note={summary.pending_points > 0 ? `+${fmtNumber(summary.pending_points)} pending resolution` : null}
+              />
               <StatTile icon="pending_actions" label="Active cases" value={fmtNumber(summary.active_cases)} />
               <StatTile icon="task_alt" label="Resolved cases" value={fmtNumber(summary.resolved_cases)} />
             </div>
@@ -155,7 +161,11 @@ export default function StudentProfile() {
 
                       <div className="text-xs text-slate-600 space-y-0.5">
                         <p>
-                          Points: <strong className="text-slate-900">{fmtNumber(c.penalty_points)}</strong> · Fine: ₹
+                          Points: <strong className="text-slate-900">{fmtNumber(c.penalty_points)}</strong>
+                          {/* Points count towards the total only once the case is resolved (never for a warning). */}
+                          {c.status !== 'resolved' && <span className="text-amber-700"> (after resolution)</span>}
+                          {c.status === 'resolved' && c.resolution_type === 'warning' && <span className="text-slate-500"> (warning: not counted)</span>}
+                          {' '}· Fine: ₹
                           {fmtNumber(c.fine)}
                         </p>
                         <p className="text-slate-500">

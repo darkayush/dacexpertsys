@@ -260,3 +260,59 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
 CREATE INDEX IF NOT EXISTS payment_transactions_student_idx ON payment_transactions(student_id, created_at DESC);
 ALTER TABLE case_payments ADD COLUMN IF NOT EXISTS payment_transaction_id INT REFERENCES payment_transactions(id) ON DELETE RESTRICT;
 CREATE INDEX IF NOT EXISTS case_payments_transaction_idx ON case_payments(payment_transaction_id) WHERE payment_transaction_id IS NOT NULL;
+
+-- DAC points rule: a student's users.total_points is the sum of penalty_points of their cases
+-- that are RESOLVED, excluding cases resolved with a warning. Points of pending cases never count.
+-- The trigger below keeps the column in sync on every insert/update/delete of a case.
+CREATE OR REPLACE FUNCTION refresh_student_total_points(sid INT) RETURNS void AS $$
+DECLARE
+  new_total INT;
+BEGIN
+  -- Lock the student row first: a concurrent transaction changing the same student's cases
+  -- waits here until the other one commits or rolls back. NO KEY UPDATE (the lock an UPDATE of
+  -- total_points takes anyway) does not conflict with the KEY SHARE locks that foreign-key
+  -- checks take, so moving cases between students cannot deadlock on those.
+  PERFORM 1 FROM users WHERE id = sid FOR NO KEY UPDATE;
+  -- Separate statement, so under READ COMMITTED it takes a new snapshot taken after the
+  -- lock was granted and therefore sees the other transaction's committed cases.
+  SELECT COALESCE(SUM(c.penalty_points), 0)::int INTO new_total
+  FROM cases c
+  WHERE c.student_id = sid AND c.status = 'resolved' AND c.resolution_type IS DISTINCT FROM 'warning';
+  UPDATE users SET total_points = new_total WHERE id = sid AND total_points IS DISTINCT FROM new_total;
+END
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION cases_total_points_trigger() RETURNS trigger AS $$
+DECLARE
+  old_sid INT := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.student_id END;
+  new_sid INT := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.student_id END;
+BEGIN
+  IF old_sid IS NOT NULL AND new_sid IS NOT NULL AND old_sid <> new_sid THEN
+    -- Case moved to another student: refresh both, lower id first, so two opposite moves
+    -- lock the student rows in the same order and cannot deadlock.
+    PERFORM refresh_student_total_points(LEAST(old_sid, new_sid));
+    PERFORM refresh_student_total_points(GREATEST(old_sid, new_sid));
+  ELSIF COALESCE(new_sid, old_sid) IS NOT NULL THEN
+    PERFORM refresh_student_total_points(COALESCE(new_sid, old_sid));
+  END IF;
+  RETURN NULL;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS cases_total_points ON cases;
+CREATE TRIGGER cases_total_points
+  AFTER INSERT OR DELETE OR UPDATE OF status, resolution_type, penalty_points, student_id ON cases
+  FOR EACH ROW EXECUTE FUNCTION cases_total_points_trigger();
+
+-- Points can never be negative (also validated by the API).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'cases_penalty_points_nonnegative' AND conrelid = 'cases'::regclass
+  ) THEN
+    ALTER TABLE cases ADD CONSTRAINT cases_penalty_points_nonnegative
+      CHECK (penalty_points IS NULL OR penalty_points >= 0);
+  END IF;
+END
+$$;

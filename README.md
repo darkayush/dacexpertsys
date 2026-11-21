@@ -296,6 +296,7 @@ npm run rag:ingest
 - **Indexes** for the dashboard and case page: `cases(created_by)`, `cases(incident_group_id)`, `case_timeline(case_id)`, `evidence(case_id)`, `notifications(user_id, created_at)`, `case_meetings(case_id)`, `case_meetings(student_id, scheduled_at)`.
 - **`case_payments`** (demo fine payments): FKs to `users` and `cases` with `ON DELETE RESTRICT` (a paid case or its student cannot be deleted), unique `transaction_id` (`TXN-YYYYMMDD-XXXXXXXX`; older `DEMO-…` ids are still accepted) and `idempotency_key`, CHECKs on amount, `payment_status` (`PENDING`/`SUCCESS`/`FAILED`) and `payment_type` (`DEMO` only), and a partial unique index allowing **one `SUCCESS` payment per case**. The amount is copied from `cases.fine` (the Admin's decision) at payment time.
 - **`payment_transactions`** (consolidated payments): one header per transaction (`transaction_id`, `total_amount`, `case_count`, `idempotency_key`); its cases are `case_payments` rows linked by `case_payments.payment_transaction_id` (NULL for single-case payments). The one-`SUCCESS`-per-case index covers both kinds.
+- **DAC points rule**: `users.total_points` = sum of `penalty_points` of the student's **resolved** cases, excluding cases resolved with a warning. Points on pending cases never count. The `cases_total_points` trigger (created in `bootstrap.js` and `schema.sql`) keeps it in sync on every case insert, update and delete; it locks the student row (`FOR NO KEY UPDATE`) before summing, so simultaneous changes to one student's cases cannot leave a stale total. Bootstrap and `seed.sql` / `npm run seed:dac` recalculate all totals (the seeds no longer write `total_points`). `cases.penalty_points` must be a whole number ≥ 0: the API returns 400 otherwise, and the `cases_penalty_points_nonnegative` CHECK constraint enforces it in the database.
 - **Optional**: `rag_documents.embedding vector(768)` and an HNSW index, created only when `pgvector` is installed.
 
 Student details (name, enrollment number, program, hostel, room, gender) live **only in `users`**. Cases reference them through `student_id`.
@@ -408,6 +409,8 @@ node scripts/test-rag-queries.js       # Chatbot checks (needs seeded DB + inges
 node scripts/test-all-10-queries.js    # 10 reference chatbot questions
 node scripts/test-payments.js          # Demo payment checks; all writes are rolled back
 node scripts/test-search.js            # Global search checks (read-only)
+node scripts/test-points.js            # DAC points rule checks; all writes are rolled back
+POINTS_TEST_DISPOSABLE_DB=1 node scripts/test-points.js   # + committing two-connection race test (throwaway DB only)
 ```
 
 There is no unit-test runner. The `test-*` scripts are integration checks against a live database. `test-payments.js` runs every write inside a transaction that is rolled back, so it leaves no data behind.

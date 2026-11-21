@@ -92,6 +92,7 @@ export async function createCaseController(req, res) {
     const createdCase = await createCaseService(req.body, requesterId, requesterRole);
     return res.status(201).json(createdCase);
   } catch (error) {
+    if (error?.code === 'INVALID_PENALTY_POINTS') return res.status(400).json({ error: error.message });
     console.error('Error creating case:', error);
     const details = process.env.NODE_ENV === 'production' ? undefined : error?.message;
     return res.status(500).json({ error: 'Failed to create case', details });
@@ -129,6 +130,7 @@ export async function createGroupCasesController(req, res) {
     if (error?.message === 'UNKNOWN_STUDENT') {
       return res.status(400).json({ error: 'One or more selected students were not found' });
     }
+    if (error?.code === 'INVALID_PENALTY_POINTS') return res.status(400).json({ error: error.message });
     console.error('Error creating group cases:', error);
     return res.status(500).json({ error: 'Failed to create group cases' });
   }
@@ -220,6 +222,7 @@ export async function updateCaseController(req, res) {
 
     return res.status(200).json(updatedCase);
   } catch (error) {
+    if (error?.code === 'INVALID_PENALTY_POINTS') return res.status(400).json({ error: error.message });
     console.error('Error updating case:', error);
     return res.status(500).json({ error: 'Failed to update case' });
   }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pool from '../backend/config/db.js';
-import { ensureWorkflowSchema } from '../backend/config/bootstrap.js';
+import { RECOMPUTE_STUDENT_POINTS_SQL, ensureWorkflowSchema } from '../backend/config/bootstrap.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,9 +85,9 @@ async function importFromCsv(client) {
   for (const r of readCsv(files.users)) {
     const role = safeRole(r.role) || 'student';
     await client.query(
-      `INSERT INTO users (name,email,password,role,program,enrollment_no,year,hostel,room,total_points,parent_email,gender,student_status)
-       VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role, program=EXCLUDED.program, enrollment_no=EXCLUDED.enrollment_no, year=EXCLUDED.year, hostel=EXCLUDED.hostel, room=EXCLUDED.room, total_points=EXCLUDED.total_points, parent_email=EXCLUDED.parent_email, gender=EXCLUDED.gender, student_status=EXCLUDED.student_status`,
+      `INSERT INTO users (name,email,password,role,program,enrollment_no,year,hostel,room,parent_email,gender,student_status)
+       VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role, program=EXCLUDED.program, enrollment_no=EXCLUDED.enrollment_no, year=EXCLUDED.year, hostel=EXCLUDED.hostel, room=EXCLUDED.room, parent_email=EXCLUDED.parent_email, gender=EXCLUDED.gender, student_status=EXCLUDED.student_status`,
       [
         nullable(r.name),
         nullable(r.email)?.toLowerCase(),
@@ -97,7 +97,7 @@ async function importFromCsv(client) {
         num(r.year),
         nullable(r.hostel),
         nullable(r.room),
-        num(r.total_points) || 0,
+        // total_points is derived from resolved cases (recalculated after the import).
         nullable(r.parent_email),
         nullable(r.gender),
         role === 'student' ? nullable(r.student_status) : null,
@@ -187,6 +187,8 @@ async function main() {
     if (csvAvailable) {
       await client.query('BEGIN');
       await importFromCsv(client);
+      // DAC points are derived: recalculate every student's total from the imported cases.
+      await client.query(RECOMPUTE_STUDENT_POINTS_SQL);
       await client.query('COMMIT');
     } else {
       // Use repository database/seed.sql directly

@@ -1,5 +1,22 @@
 import pool from './db.js';
 
+// Recalculates every student's users.total_points from their cases (DAC points rule above
+// ensureWorkflowSchema's points section). Idempotent; only rows whose total differs change.
+// Same statement as the end of database/seed.sql.
+export const RECOMPUTE_STUDENT_POINTS_SQL = `UPDATE users u
+SET total_points = s.points
+FROM (
+  SELECT u2.id,
+         COALESCE(SUM(c.penalty_points) FILTER (
+           WHERE c.status = 'resolved' AND c.resolution_type IS DISTINCT FROM 'warning'
+         ), 0)::int AS points
+  FROM users u2
+  LEFT JOIN cases c ON c.student_id = u2.id
+  WHERE u2.role = 'student'
+  GROUP BY u2.id
+) s
+WHERE u.id = s.id AND u.total_points IS DISTINCT FROM s.points`;
+
 export async function ensureWorkflowSchema() {
   const statements = [
     "ALTER TYPE case_status ADD VALUE IF NOT EXISTS 'pending_chief'",
@@ -223,9 +240,9 @@ export async function ensureWorkflowSchema() {
   // Ensure default demo/test student 240123 exists
   try {
     const u = await pool.query(`
-      INSERT INTO users (name, email, role, program, enrollment_no, year, hostel, room, total_points, student_status)
-      VALUES ('Aarav Sharma', 'aarav.sharma@dac.edu', 'student', 'btech', '240123', 3, 'APJ', 'B-204', 25, 'active')
-      ON CONFLICT (email) DO UPDATE SET enrollment_no = '240123', name = 'Aarav Sharma', hostel = 'APJ', room = 'B-204', total_points = 25
+      INSERT INTO users (name, email, role, program, enrollment_no, year, hostel, room, student_status)
+      VALUES ('Aarav Sharma', 'aarav.sharma@dac.edu', 'student', 'btech', '240123', 3, 'APJ', 'B-204', 'active')
+      ON CONFLICT (email) DO UPDATE SET enrollment_no = '240123', name = 'Aarav Sharma', hostel = 'APJ', room = 'B-204'
       RETURNING id
     `);
     if (u.rows[0]?.id) {
@@ -245,6 +262,71 @@ export async function ensureWorkflowSchema() {
     }
   } catch (err) {
     // Ignore if already configured or users table not yet ready
+  }
+
+  // DAC points rule: a student's users.total_points is the sum of penalty_points of their cases
+  // that are RESOLVED, excluding cases resolved with a warning. Points of pending cases never count.
+  // The trigger below keeps the column in sync on every insert/update/delete of a case.
+  // Runs last on every start: (re)creates the trigger, then corrects any stale totals
+  // (normally 0 rows; it fixes totals written before the trigger existed or by seed imports).
+  // The function and constraint text is kept identical to database/schema.sql.
+  const pointsStatements = [
+    `CREATE OR REPLACE FUNCTION refresh_student_total_points(sid INT) RETURNS void AS $$
+DECLARE
+  new_total INT;
+BEGIN
+  -- Lock the student row first: a concurrent transaction changing the same student's cases
+  -- waits here until the other one commits or rolls back. NO KEY UPDATE (the lock an UPDATE of
+  -- total_points takes anyway) does not conflict with the KEY SHARE locks that foreign-key
+  -- checks take, so moving cases between students cannot deadlock on those.
+  PERFORM 1 FROM users WHERE id = sid FOR NO KEY UPDATE;
+  -- Separate statement, so under READ COMMITTED it takes a new snapshot taken after the
+  -- lock was granted and therefore sees the other transaction's committed cases.
+  SELECT COALESCE(SUM(c.penalty_points), 0)::int INTO new_total
+  FROM cases c
+  WHERE c.student_id = sid AND c.status = 'resolved' AND c.resolution_type IS DISTINCT FROM 'warning';
+  UPDATE users SET total_points = new_total WHERE id = sid AND total_points IS DISTINCT FROM new_total;
+END
+$$ LANGUAGE plpgsql`,
+    `CREATE OR REPLACE FUNCTION cases_total_points_trigger() RETURNS trigger AS $$
+DECLARE
+  old_sid INT := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.student_id END;
+  new_sid INT := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.student_id END;
+BEGIN
+  IF old_sid IS NOT NULL AND new_sid IS NOT NULL AND old_sid <> new_sid THEN
+    -- Case moved to another student: refresh both, lower id first, so two opposite moves
+    -- lock the student rows in the same order and cannot deadlock.
+    PERFORM refresh_student_total_points(LEAST(old_sid, new_sid));
+    PERFORM refresh_student_total_points(GREATEST(old_sid, new_sid));
+  ELSIF COALESCE(new_sid, old_sid) IS NOT NULL THEN
+    PERFORM refresh_student_total_points(COALESCE(new_sid, old_sid));
+  END IF;
+  RETURN NULL;
+END
+$$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS cases_total_points ON cases`,
+    `CREATE TRIGGER cases_total_points
+  AFTER INSERT OR DELETE OR UPDATE OF status, resolution_type, penalty_points, student_id ON cases
+  FOR EACH ROW EXECUTE FUNCTION cases_total_points_trigger()`,
+    `DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'cases_penalty_points_nonnegative' AND conrelid = 'cases'::regclass
+  ) THEN
+    ALTER TABLE cases ADD CONSTRAINT cases_penalty_points_nonnegative
+      CHECK (penalty_points IS NULL OR penalty_points >= 0);
+  END IF;
+END
+$$`,
+    RECOMPUTE_STUDENT_POINTS_SQL,
+  ];
+  for (const statement of pointsStatements) {
+    try {
+      await pool.query(statement);
+    } catch (err) {
+      console.warn(`Bootstrap statement warning (${err.message}):`, statement.slice(0, 80));
+    }
   }
 }
 

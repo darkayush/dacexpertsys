@@ -294,6 +294,20 @@ export async function getCasesSummaryService(scope) {
   return { total, severe, byStatus, trend: trendResult.rows, queue: queueResult.rows };
 }
 
+// DAC penalty points must be a whole number of 0 or more (the database also enforces >= 0).
+// Empty / null means 0. Throws an error with code INVALID_PENALTY_POINTS (HTTP 400).
+export function validatePenaltyPoints(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const points = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isInteger(points) || points < 0 || points > 2147483647) {
+    const error = new Error('Penalty points must be a whole number of 0 or more.');
+    error.code = 'INVALID_PENALTY_POINTS';
+    error.status = 400;
+    throw error;
+  }
+  return points;
+}
+
 // Inserts one case inside an open transaction: gives it a public DAC-<year>-<id> number,
 // notifies the chief wardens and writes the first timeline entry.
 async function insertCaseWithClient(client, payload, requesterId, requesterRole, { groupSize = 0 } = {}) {
@@ -313,6 +327,7 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     notes = null,
     incident_group_id: incidentGroupId = null,
   } = payload;
+  const validPenaltyPoints = validatePenaltyPoints(penaltyPoints);
 
   const query = `
     INSERT INTO cases (
@@ -350,7 +365,7 @@ async function insertCaseWithClient(client, payload, requesterId, requesterRole,
     description,
     location,
     incidentDate,
-    penaltyPoints,
+    validPenaltyPoints,
     evidenceUrl,
     requesterRole,
     substanceType,
@@ -760,9 +775,13 @@ export async function getStudentProfileService(enrollmentNo) {
   );
   const cases = casesResult.rows;
 
+  // DAC points count only once a case is resolved, and never for a warning (same rule as the
+  // users.total_points trigger). Points on cases still under review are reported separately.
+  const counts = (c) => c.status === 'resolved' && c.resolution_type !== 'warning';
   const summary = {
     total_cases: cases.length,
-    total_points: cases.reduce((sum, c) => sum + Number(c.penalty_points || 0), 0),
+    total_points: cases.filter(counts).reduce((sum, c) => sum + Number(c.penalty_points || 0), 0),
+    pending_points: cases.filter((c) => c.status !== 'resolved').reduce((sum, c) => sum + Number(c.penalty_points || 0), 0),
     active_cases: cases.filter((c) => ACTIVE_CASE_STATUSES.includes(c.status)).length,
     resolved_cases: cases.filter((c) => c.status === 'resolved').length,
   };
@@ -788,7 +807,7 @@ export async function updateCaseService(caseId, payload, actor) {
 
   Object.entries(allowedFields).forEach(([key, column]) => {
     if (Object.prototype.hasOwnProperty.call(payload, key)) {
-      values.push(payload[key]);
+      values.push(key === 'penalty_points' ? validatePenaltyPoints(payload[key]) : payload[key]);
       updates.push(`${column} = $${values.length}`);
     }
   });

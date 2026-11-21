@@ -130,7 +130,7 @@ function StepStudentInfo({
       {studentHistory?.student && (
         <StudentCard
           student={studentHistory.student}
-          previousPoints={studentHistory.total_points || 0}
+          previousPoints={studentHistory.student.total_points || 0}
           caseCount={studentHistory.cases?.length || 0}
         />
       )}

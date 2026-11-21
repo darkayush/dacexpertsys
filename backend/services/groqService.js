@@ -11,7 +11,8 @@ export function isGroqConfigured() {
 }
 
 /**
- * Single-turn chat completion on Groq (OpenAI-compatible API).
+ * Chat completion on Groq (OpenAI-compatible API).
+ * history (optional): earlier turns [{ role: 'user' | 'assistant' | 'model', content }].
  * Returns { text, model }. Throws on HTTP errors or timeout.
  */
 export async function groqGenerate(options) {
@@ -57,13 +58,17 @@ function readRetryAfterMs(response, detail) {
   return match[2].toLowerCase() === 'ms' ? value : value * 1000;
 }
 
-async function callGroq(model, { prompt, systemInstruction, temperature = 0, maxTokens = 2048, responseFormat = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+async function callGroq(model, { prompt, systemInstruction, history = [], temperature = 0, maxTokens = 2048, responseFormat = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   const apiKey = (process.env.GROQ_API_KEY || '').trim();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is not configured in backend environment variables.');
   }
   const messages = [];
   if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+  for (const turn of Array.isArray(history) ? history : []) {
+    const content = String(turn?.content ?? turn?.text ?? '');
+    if (content) messages.push({ role: turn.role === 'user' ? 'user' : 'assistant', content });
+  }
   messages.push({ role: 'user', content: String(prompt || '') });
 
   const controller = new AbortController();
@@ -80,7 +85,7 @@ async function callGroq(model, { prompt, systemInstruction, temperature = 0, max
         messages,
         temperature,
         max_tokens: maxTokens,
-        // gpt-oss models reason before answering; keep that short for a plain translation.
+        // gpt-oss models reason before answering; keep that short (translation, chat, recommendations).
         ...(model.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {}),
         // e.g. { type: 'json_object' } to force a JSON reply.
         ...(responseFormat ? { response_format: responseFormat } : {}),

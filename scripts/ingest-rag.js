@@ -5,7 +5,6 @@ import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import pool from '../backend/config/db.js';
 import { ensureWorkflowSchema } from '../backend/config/bootstrap.js';
-import { isGeminiConfigured, generateEmbeddings, detectEmbeddingDimension } from '../backend/services/geminiService.js';
 
 dotenv.config();
 
@@ -108,24 +107,11 @@ async function ingest() {
     documentsProcessed: 0,
     chunksCreated: 0,
     chunksSkipped: 0,
-    embeddingsGenerated: 0,
     errors: 0,
   };
 
-  const hasPgvector = (await client.query("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).rowCount > 0;
-  const geminiReady = isGeminiConfigured();
-
-  if (!geminiReady) {
-    console.warn('⚠️  GEMINI_API_KEY is not configured in .env. Documents and metadata will be indexed; vectors will be generated once key is configured.');
-  } else {
-    console.log('✓ Gemini API key detected. Embedding generation enabled.');
-  }
-
-  if (hasPgvector) {
-    console.log('✓ PostgreSQL pgvector extension is active.');
-  } else {
-    console.warn('⚠️  PostgreSQL pgvector extension is not active. Falling back to structured metadata search.');
-  }
+  // Documents are stored as text and found with PostgreSQL keyword search (ragService.js);
+  // no embeddings are generated.
 
   if (!fs.existsSync(KB_DIR)) {
     console.error(`Knowledge base directory not found at: ${KB_DIR}`);
@@ -136,7 +122,7 @@ async function ingest() {
   files.sort((a, b) => (a.includes('policy') ? -1 : (b.includes('policy') ? 1 : 0)));
   console.log(`Found ${files.length} JSONL files in ${KB_DIR}`);
 
-  const pendingChunksToEmbed = [];
+  const pendingChunks = [];
 
   for (const filename of files) {
     stats.filesProcessed += 1;
@@ -182,20 +168,17 @@ async function ingest() {
         const hash = computeHash(chunk.content);
 
         // Check if chunk already exists in DB
-        const existing = await client.query(
-          'SELECT content_hash, (embedding IS NOT NULL) AS has_embedding FROM rag_documents WHERE id = $1',
-          [chunk.chunkId]
-        );
+        const existing = await client.query('SELECT content_hash FROM rag_documents WHERE id = $1', [chunk.chunkId]);
 
         const row = existing.rows[0];
-        // If content unchanged and already has embedding (or gemini not ready), skip
-        if (row && row.content_hash === hash && (row.has_embedding || !geminiReady)) {
+        // Unchanged content: nothing to update.
+        if (row && row.content_hash === hash) {
           stats.chunksSkipped += 1;
           continue;
         }
 
         stats.chunksCreated += 1;
-        pendingChunksToEmbed.push({
+        pendingChunks.push({
           id: chunk.chunkId,
           source: meta.source || sourceName,
           document_type: meta.document_type || defaultDocType,
@@ -208,68 +191,34 @@ async function ingest() {
     }
   }
 
-  console.log(`\nExtracted ${pendingChunksToEmbed.length} chunks needing update/embedding.`);
+  console.log(`\nExtracted ${pendingChunks.length} new or changed chunks.`);
 
-  // Process pending chunks in batches
+  // Upsert pending chunks in batches
   const batchSize = 30;
-  for (let i = 0; i < pendingChunksToEmbed.length; i += batchSize) {
-    const batch = pendingChunksToEmbed.slice(i, i + batchSize);
-    let embeddings = [];
-
-    if (geminiReady) {
+  for (let i = 0; i < pendingChunks.length; i += batchSize) {
+    const batch = pendingChunks.slice(i, i + batchSize);
+    for (const item of batch) {
       try {
-        const texts = batch.map((c) => c.content);
-        embeddings = await generateEmbeddings(texts, { batchSize: 30, delayMs: 200 });
-        stats.embeddingsGenerated += embeddings.length;
-      } catch (err) {
-        console.error(`Error generating embeddings for batch ${i / batchSize + 1}:`, err.message);
-        stats.errors += 1;
-      }
-    }
-
-    for (let j = 0; j < batch.length; j++) {
-      const item = batch[j];
-      const emb = embeddings[j] || null;
-
-      try {
-        if (hasPgvector && emb) {
-          const vectorStr = `[${emb.join(',')}]`;
-          await client.query(
-            `INSERT INTO rag_documents (id, source, document_type, document_id, content, content_hash, metadata, embedding, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, NOW())
-             ON CONFLICT (id) DO UPDATE SET
-               source = EXCLUDED.source,
-               document_type = EXCLUDED.document_type,
-               document_id = EXCLUDED.document_id,
-               content = EXCLUDED.content,
-               content_hash = EXCLUDED.content_hash,
-               metadata = EXCLUDED.metadata,
-               embedding = EXCLUDED.embedding,
-               updated_at = NOW()`,
-            [item.id, item.source, item.document_type, item.document_id, item.content, item.content_hash, item.metadata, vectorStr]
-          );
-        } else {
-          await client.query(
-            `INSERT INTO rag_documents (id, source, document_type, document_id, content, content_hash, metadata, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-             ON CONFLICT (id) DO UPDATE SET
-               source = EXCLUDED.source,
-               document_type = EXCLUDED.document_type,
-               document_id = EXCLUDED.document_id,
-               content = EXCLUDED.content,
-               content_hash = EXCLUDED.content_hash,
-               metadata = EXCLUDED.metadata,
-               updated_at = NOW()`,
-            [item.id, item.source, item.document_type, item.document_id, item.content, item.content_hash, item.metadata]
-          );
-        }
+        await client.query(
+          `INSERT INTO rag_documents (id, source, document_type, document_id, content, content_hash, metadata, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             source = EXCLUDED.source,
+             document_type = EXCLUDED.document_type,
+             document_id = EXCLUDED.document_id,
+             content = EXCLUDED.content,
+             content_hash = EXCLUDED.content_hash,
+             metadata = EXCLUDED.metadata,
+             updated_at = NOW()`,
+          [item.id, item.source, item.document_type, item.document_id, item.content, item.content_hash, item.metadata]
+        );
       } catch (dbErr) {
         stats.errors += 1;
         console.error(`DB upsert error for ${item.id}:`, dbErr.message);
       }
     }
 
-    process.stdout.write(`Ingested ${Math.min(i + batchSize, pendingChunksToEmbed.length)}/${pendingChunksToEmbed.length} chunks...\r`);
+    process.stdout.write(`Ingested ${Math.min(i + batchSize, pendingChunks.length)}/${pendingChunks.length} chunks...\r`);
   }
 
   client.release();
@@ -282,7 +231,6 @@ async function ingest() {
   console.log(`Documents processed:   ${stats.documentsProcessed}`);
   console.log(`Chunks created:        ${stats.chunksCreated}`);
   console.log(`Chunks skipped:        ${stats.chunksSkipped}`);
-  console.log(`Embeddings generated:  ${stats.embeddingsGenerated}`);
   console.log(`Errors:                ${stats.errors}`);
   console.log('=======================================');
 }

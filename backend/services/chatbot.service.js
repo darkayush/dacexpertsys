@@ -1,7 +1,7 @@
 import pool from '../config/db.js';
 import { routeQuery } from './queryRouter.js';
 import { retrieveRelevantDocuments, formatContext } from './ragService.js';
-import { isGeminiConfigured, generateContent } from './geminiService.js';
+import { groqGenerate, isGroqConfigured } from './groqService.js';
 
 // Short-term in-memory conversation cache (TTL 30 minutes, max 6 turns per conversation)
 const conversationMemory = new Map();
@@ -357,9 +357,10 @@ export async function answerChatbotQuestion(user, rawMessage, conversationId = n
   // Students may only ask about their own record. Other students' records, names and
   // aggregate statistics are never looked up for them.
   const isStudentUser = String(user?.role || '').toLowerCase() === 'student';
+  let ownEnrollmentNo = null;
   if (isStudentUser) {
     const ownRes = await pool.query("SELECT enrollment_no FROM users WHERE id = $1 AND role = 'student'", [Number(user.sub)]);
-    const ownEnrollmentNo = ownRes.rows[0]?.enrollment_no || null;
+    ownEnrollmentNo = ownRes.rows[0]?.enrollment_no || null;
     const asksAboutOther = (filters.enrollment_no && filters.enrollment_no !== ownEnrollmentNo) || filters.student_name;
     if (asksAboutOther) {
       return {
@@ -508,6 +509,8 @@ export async function answerChatbotQuestion(user, rawMessage, conversationId = n
     topK: intent === 'policy' || intent === 'workflow' ? 7 : 5,
     filters: (intent === 'policy' || intent === 'workflow') ? { document_type: 'dac_policy' } : {},
     user,
+    // Students: only policy documents and their own case documents.
+    studentEnrollment: ownEnrollmentNo,
   });
 
   const formattedRAGContext = formatContext(retrievedDocs);
@@ -542,7 +545,7 @@ export async function answerChatbotQuestion(user, rawMessage, conversationId = n
   console.log('[DAC RAG] intent:', intent);
   console.log('[DAC RAG] query:', text);
   console.log('[DAC RAG] structured retrieval:', structuredSummary);
-  console.log('[DAC RAG] vector retrieval:', retrievedDocs.map((d) => `${d.id} (score: ${d.score})`));
+  console.log('[DAC RAG] keyword retrieval:', retrievedDocs.map((d) => `${d.id} (score: ${d.score})`));
   console.log('[DAC RAG] documents retrieved:', retrievedDocs.length);
 
   // 5. Construct Grounded LLM Prompt
@@ -562,18 +565,21 @@ ${structuredContext || 'No specific structured records queried.'}
 
   let answer = '';
 
-  if (isGeminiConfigured()) {
+  if (isGroqConfigured()) {
     try {
-      console.log('[DAC RAG] Gemini request dispatched');
-      const gen = await generateContent({
+      // Groq (GROQ_MODEL, default openai/gpt-oss-120b) writes the answer from the grounded context.
+      const gen = await groqGenerate({
         prompt: llmPrompt,
         systemInstruction: SYSTEM_PROMPT,
         history: convoState.messages || [],
+        temperature: 0.1,
+        maxTokens: 2048,
+        timeoutMs: 30000,
       });
       answer = gen.text;
-      console.log('[DAC RAG] response generated length:', answer.length);
+      if (!answer) throw new Error('Empty answer from Groq');
     } catch (llmErr) {
-      console.warn('[DAC RAG] Gemini LLM generation error, falling back to local synthesis:', llmErr.message);
+      console.warn('[DAC RAG] Groq generation error, falling back to local synthesis:', llmErr.message);
       answer = fallbackAnswerSynthesis(text, intent, structuredContext, retrievedDocs, studentRecord, countResult);
     }
   } else {
@@ -605,7 +611,7 @@ ${structuredContext || 'No specific structured records queried.'}
 }
 
 /**
- * Fallback grounded response synthesis when Gemini API is temporarily unavailable.
+ * Fallback grounded response synthesis when Groq is not configured or temporarily unavailable.
  */
 function fallbackAnswerSynthesis(question, intent, structuredContext, docs, studentRecord, countResult) {
   if (countResult) {

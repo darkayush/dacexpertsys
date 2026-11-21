@@ -1,28 +1,6 @@
 import pool from '../config/db.js';
-import { generateEmbedding, isGeminiConfigured } from './geminiService.js';
 
 const DEFAULT_TOP_K = parseInt(process.env.RAG_TOP_K || '5', 10);
-const DEFAULT_MIN_SCORE = parseFloat(process.env.RAG_MIN_SCORE || '0.50');
-
-/**
- * Checks if pgvector is enabled in the database.
- */
-let isPgvectorChecked = false;
-let hasPgvector = false;
-
-async function checkPgvectorSupport() {
-  if (isPgvectorChecked) return hasPgvector;
-  try {
-    const res = await pool.query("SELECT 1 FROM pg_extension WHERE extname = 'vector'");
-    hasPgvector = res.rowCount > 0;
-    isPgvectorChecked = true;
-    return hasPgvector;
-  } catch {
-    hasPgvector = false;
-    isPgvectorChecked = true;
-    return false;
-  }
-}
 
 /**
  * Clean string helper.
@@ -32,11 +10,14 @@ function clean(val) {
 }
 
 /**
- * Retrieves relevant documents using semantic vector similarity search via pgvector,
- * with graceful fallback to full-text / metadata search if embeddings are not yet generated.
+ * Retrieves the documents most relevant to a question with PostgreSQL keyword search over
+ * rag_documents (DAC policy sections and case narratives).
+ *
+ * Students only ever see policy documents and their own case documents. If the caller cannot
+ * say which student it is (no enrollment number), a student gets policy documents only.
  *
  * @param {string} query - The search query
- * @param {object} options - Search options { topK, minScore, filters, userRole, studentEnrollment }
+ * @param {object} options - { topK, filters, user, studentEnrollment }
  * @returns {Promise<Array<{ id, source, document_type, document_id, content, metadata, score }>>}
  */
 export async function retrieveRelevantDocuments(query, options = {}) {
@@ -44,84 +25,14 @@ export async function retrieveRelevantDocuments(query, options = {}) {
   if (!cleanQuery) return [];
 
   const topK = options.topK || DEFAULT_TOP_K;
-  const minScore = options.minScore !== undefined ? options.minScore : DEFAULT_MIN_SCORE;
-  const filters = options.filters || {};
+  const filters = { ...(options.filters || {}) };
   const user = options.user || null;
-
-  const pgvectorSupported = await checkPgvectorSupport();
-  const geminiAvailable = isGeminiConfigured();
 
   // If user is a student, scope retrieval so they cannot see other students' private case documents
   const isStudent = user && String(user.role).toLowerCase() === 'student';
-  const studentEnrollment = user?.enrollment_no ? String(user.enrollment_no) : null;
+  const studentEnrollment = clean(options.studentEnrollment || user?.enrollment_no) || null;
+  if (isStudent && !studentEnrollment) filters.document_type = 'dac_policy'; // fail closed
 
-  let queryEmbedding = null;
-  if (geminiAvailable && pgvectorSupported) {
-    try {
-      queryEmbedding = await generateEmbedding(cleanQuery);
-    } catch (embErr) {
-      console.warn('Could not generate query embedding, using text fallback:', embErr.message);
-    }
-  }
-
-  // 1. Vector Retrieval if embedding is present
-  if (queryEmbedding && pgvectorSupported) {
-    const conditions = ['embedding IS NOT NULL'];
-    const values = [`[${queryEmbedding.join(',')}]`];
-
-    if (filters.document_type) {
-      values.push(filters.document_type);
-      conditions.push(`document_type = $${values.length}`);
-    }
-
-    if (filters.case_id) {
-      values.push(filters.case_id);
-      conditions.push(`(document_id = $${values.length} OR metadata->>'case_id' = $${values.length})`);
-    }
-
-    if (filters.offense_type) {
-      values.push(filters.offense_type);
-      conditions.push(`LOWER(metadata->>'offense_type') = LOWER($${values.length})`);
-    }
-
-    if (filters.substance_type) {
-      values.push(filters.substance_type);
-      conditions.push(`LOWER(metadata->>'substance_type') = LOWER($${values.length})`);
-    }
-
-    if (isStudent && studentEnrollment) {
-      // Students can see policy and only their own cases/timelines
-      values.push(studentEnrollment);
-      conditions.push(`(document_type = 'dac_policy' OR metadata->>'enrollment_no' = $${values.length})`);
-    }
-
-    values.push(minScore);
-    const minScoreIndex = values.length;
-
-    values.push(topK);
-    const limitIndex = values.length;
-
-    const sql = `
-      SELECT id, source, document_type, document_id, content, metadata,
-             (1 - (embedding <=> $1::vector)) AS score
-      FROM rag_documents
-      WHERE ${conditions.join(' AND ')}
-        AND (1 - (embedding <=> $1::vector)) >= $${minScoreIndex}
-      ORDER BY embedding <=> $1::vector ASC
-      LIMIT $${limitIndex}
-    `;
-
-    try {
-      const res = await pool.query(sql, values);
-      if (res.rows.length > 0) {
-        return deduplicateChunks(res.rows);
-      }
-    } catch (err) {
-      console.warn('Vector query error, falling back to text search:', err.message);
-    }
-  }
-
-  // 2. Clean fallback: Text and structured keyword search in PostgreSQL
   return fallbackTextSearch(cleanQuery, { topK, filters, isStudent, studentEnrollment });
 }
 
@@ -139,7 +50,7 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
- * Clean PostgreSQL text/metadata fallback search.
+ * PostgreSQL keyword / metadata search over rag_documents.
  */
 async function fallbackTextSearch(query, { topK, filters, isStudent, studentEnrollment }) {
   const terms = query

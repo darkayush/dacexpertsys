@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { requireRoles } from '../middleware/auth.middleware.js';
-import { generateContent, isGeminiConfigured } from '../services/geminiService.js';
 import { groqGenerate, isGroqConfigured } from '../services/groqService.js';
 
 const router = Router();
@@ -15,7 +14,7 @@ Reply with the English translation only.`;
 
 // POST /api/translate/hi-en { text } -> { translation }
 // Used by the Register Case voice input: Hindi speech is transcribed in the browser,
-// then translated here with Groq (preferred, if GROQ_API_KEY is set) or Gemini.
+// then translated here with Groq (GROQ_MODEL, default openai/gpt-oss-120b).
 // API keys stay on the backend.
 router.post('/hi-en', requireRoles('warden', 'chief_warden'), async (req, res) => {
   const text = String(req.body?.text || '').trim();
@@ -25,15 +24,13 @@ router.post('/hi-en', requireRoles('warden', 'chief_warden'), async (req, res) =
   if (text.length > MAX_TEXT_LENGTH) {
     return res.status(400).json({ error: `text must be at most ${MAX_TEXT_LENGTH} characters` });
   }
-  if (!isGroqConfigured() && !isGeminiConfigured()) {
-    return res.status(503).json({ error: 'Translation is not configured. Set GROQ_API_KEY or GEMINI_API_KEY in .env.' });
+  if (!isGroqConfigured()) {
+    return res.status(503).json({ error: 'Translation is not configured. Set GROQ_API_KEY in .env.' });
   }
 
   try {
     const request = { prompt: text, systemInstruction: SYSTEM_INSTRUCTION, temperature: 0 };
-    const { text: translation } = isGroqConfigured()
-      ? await groqGenerate(request)
-      : await generateContent(request);
+    const { text: translation } = await groqGenerate(request);
     if (!translation) {
       return res.status(502).json({ error: 'The translation came back empty. Please try again.' });
     }

@@ -5,6 +5,7 @@ import DACLayout from '../../components/layout/DACLayout';
 import { useAuth } from '../../context/AuthContext';
 import StudentCard from '../../components/ui/StudentCard';
 import StatusBadge from '../../components/ui/StatusBadge';
+import { caseFineText, casePointsText } from '../../components/cases/caseUi';
 import { createCase, createGroupCases, getOffenceTypes, getRules, getStudentHistory, translateHindiToEnglish, uploadEvidence } from '../../services/api';
 
 // Offence types and their offences come from Admin Settings → Rules & Policies: each rule has an
@@ -1230,9 +1231,9 @@ function StepSubmit({ caseResult, loading, error, onSubmit, onNavigateDashboard 
         )}
         <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
           {[
-            { label: 'Level', value: `Level ${caseResult.offenseLevel}` },
-            { label: 'Fine', value: `Rs. ${caseResult.fine?.toLocaleString()}` },
-            { label: 'Points', value: `-${caseResult.penaltyPoints} pts` },
+            { label: 'Level', value: caseResult.offenseLevel ? `Level ${caseResult.offenseLevel}` : '—' },
+            { label: 'Fine', value: caseResult.fineText },
+            { label: 'Points', value: caseResult.pointsText },
           ].map(({ label, value }) => (
             <div key={label} className="bg-white border border-[#d1fae5] rounded-lg p-3 text-center">
               <p className="text-[#047857] font-bold text-sm">{value}</p>
@@ -1240,6 +1241,7 @@ function StepSubmit({ caseResult, loading, error, onSubmit, onNavigateDashboard 
             </div>
           ))}
         </div>
+        <p className="-mt-2 text-xs text-[#64748b] text-center">Points and fine are set by the DAC when the case is resolved.</p>
         <button
           type="button"
           onClick={onNavigateDashboard}
@@ -1938,10 +1940,11 @@ export default function RegisterCase() {
       const nameById = Object.fromEntries(groupStudents.map((s) => [s.id, s]));
       setCaseResult({
         token: first.external_case_id || `#${first.id}`,
-        offenseLevel: 1,
-        severityScore: 25,
-        fine: Number(first.penalty_points || 0) * 100,
-        penaltyPoints: Number(first.penalty_points || 0),
+        // Level comes from the policy offence the backend stored; points and fine are set by the
+        // DAC later, so the new (pending) case shows a dash for them.
+        offenseLevel: first.offense_level ?? null,
+        pointsText: casePointsText(first),
+        fineText: caseFineText(first),
         evidenceWarning,
         groupCases: isGroup
           ? createdCases.map((c) => ({

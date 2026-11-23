@@ -12,6 +12,9 @@ function getCasePathByRole(role, caseId) {
   return `/cases/${caseId}`;
 }
 
+// Newest notifications listed in the dropdown (the list scrolls).
+const MAX_SHOWN = 50;
+
 export default function NotificationBell() {
   const navigate = useNavigate();
   const { role } = useAuth();
@@ -111,7 +114,7 @@ export default function NotificationBell() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.98 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="fixed inset-x-2 top-[4.5rem] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-3xl bg-white border border-[#edf2f7] shadow-2xl z-50 overflow-hidden"
+            className="fixed inset-x-2 top-[4.5rem] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 max-h-[calc(100dvh-6rem)] flex flex-col rounded-3xl bg-white border border-[#edf2f7] shadow-2xl z-50 overflow-hidden"
           >
             {/* Header */}
             <div className="px-5 py-4 border-b border-[#f1f5f9] flex items-center justify-between bg-[#fcfdfe]">
@@ -135,7 +138,8 @@ export default function NotificationBell() {
             </div>
 
             {/* List */}
-            <div className="max-h-80 overflow-y-auto divide-y divide-[#f8fafc]">
+            {/* data-lenis-prevent: Lenis smooth scroll otherwise takes the wheel and scrolls the page. */}
+            <div data-lenis-prevent className="flex-1 min-h-0 sm:max-h-96 overflow-y-auto overscroll-contain divide-y divide-[#f8fafc]">
               {loading && notifications.length === 0 ? (
                 <div className="py-8 text-center text-xs text-[#94a3b8]">
                   Loading notifications...
@@ -148,7 +152,7 @@ export default function NotificationBell() {
                   <p className="text-xs font-semibold text-[#64748b]">No notifications yet</p>
                 </div>
               ) : (
-                notifications.slice(0, 8).map((item) => (
+                notifications.slice(0, MAX_SHOWN).map((item) => (
                   <div
                     key={item.id}
                     onClick={() => handleItemClick(item)}

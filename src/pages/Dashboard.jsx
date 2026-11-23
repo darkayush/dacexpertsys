@@ -22,15 +22,8 @@ import { getCasesSummary } from '../services/api';
 const OWN_CASES_QUERY = { role: 'my_created_only' };
 const ALL_CASES_QUERY = {};
 
-// How far back the "Recent Cases" table goes, per role. The count cards always cover all cases.
-// Admin: every past record. Warden: every case they registered. Chief Warden and DSW: last 10 days.
-const RECENT_DAYS = { chief_warden: 10, dsw: 10 };
-const TABLE_QUERIES = {
-  admin: ALL_CASES_QUERY,
-  warden: OWN_CASES_QUERY,
-  chief_warden: { days: RECENT_DAYS.chief_warden },
-  dsw: { days: RECENT_DAYS.dsw },
-};
+// The case table covers the same cases as the count cards: wardens see the cases they registered;
+// Admin, Chief Warden and DSW see every case their role may see (scoped by the backend).
 
 // 'YYYY-MM-DD' -> local-midnight Date (new Date('YYYY-MM-DD') would be UTC).
 function parseDay(day) {
@@ -82,12 +75,8 @@ export default function Dashboard() {
     };
   }, [scopeQuery]);
 
-  const tableQuery = TABLE_QUERIES[role] || scopeQuery;
-  const tableDays = RECENT_DAYS[role];
-  const tableTitle = tableDays
-    ? `Cases from the Last ${tableDays} Days`
-    : isWarden ? 'Cases You Registered' : 'All Cases';
-  const table = usePagedCases({ query: tableQuery, filter, pageSize: 5 });
+  const tableTitle = isWarden ? 'Cases You Registered' : 'All Cases';
+  const table = usePagedCases({ query: scopeQuery, filter, pageSize: 5 });
 
   const loading = summaryLoading;
   const error = summaryError || table.error;
